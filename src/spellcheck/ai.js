@@ -1,5 +1,4 @@
 // AI-powered contextual spell checking using OpenAI GPT-4o-mini
-// Deep contextual analysis - not just spelling, but brand consistency and tone
 
 import OpenAI from 'openai';
 import { Result } from '../utils/fp.js';
@@ -13,12 +12,8 @@ const getClient = () => {
   return client;
 };
 
-// Build concise prompt for speed
+// Build prompt for contextual spell checking
 const buildPrompt = ({ speakerNotes, slideContent }) => {
-  const slideSection = slideContent
-    ? `SLIDE (brand standard): ${slideContent}\n\n`
-    : '';
-
   return `SLIDE: ${slideContent || 'None'}
 
 NOTES: ${speakerNotes}
@@ -65,9 +60,8 @@ const parseAIResponse = (content) => {
           reason: String(item.reason || 'Potential issue'),
           type: item.type || 'spelling',
           confidence: item.confidence || 'medium',
-          context: item.context || '',
           source: 'ai',
-          suggestions: [String(item.suggestion)], // For UI compatibility
+          suggestions: [String(item.suggestion)],
         }))
     );
   } catch (error) {
@@ -75,13 +69,8 @@ const parseAIResponse = (content) => {
   }
 };
 
-// Main AI spell check function - now does deep contextual analysis
-export const aiSpellCheck = async ({
-  speakerNotes,
-  slideContent = '',
-  terminology = [],
-  traditionalErrors = [], // Pass in traditional checker results for AI to review
-}) => {
+// Main AI spell check function
+export const aiSpellCheck = async ({ speakerNotes, slideContent = '' }) => {
   if (!process.env.OPENAI_API_KEY) {
     return Result.err('OPENAI_API_KEY not configured');
   }
@@ -124,7 +113,7 @@ export const aiSpellCheck = async ({
   }
 };
 
-// Extract terminology - now includes common abbreviations
+// Extract terminology from slide content
 export const extractTerminology = async (slideContent) => {
   if (!process.env.OPENAI_API_KEY) {
     return Result.err('OPENAI_API_KEY not configured');
@@ -144,21 +133,14 @@ export const extractTerminology = async (slideContent) => {
       messages: [
         {
           role: 'user',
-          content: `Extract ALL terminology from this slide content that should be preserved during spell checking.
+          content: `Extract terminology from this slide content that should be preserved during spell checking.
 
-Include:
-1. Brand names, product names, company names
-2. Technical terms and jargon
-3. Acronyms AND their expanded forms (e.g., both "GTM" and "go-to-market")
-4. Industry-specific terminology
-5. Any proper nouns
+Include: brand names, technical terms, acronyms, industry jargon, proper nouns.
 
 Content:
 ${slideContent}
 
-Return a JSON array of terms. Include both the full term and common abbreviations.
-Example: ["go-to-market", "GTM", "gtm", "revenue teams", "rev teams"]
-
+Return a JSON array of terms: ["term1", "term2"]
 Return ONLY the JSON array.`,
         },
       ],

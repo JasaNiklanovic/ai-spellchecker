@@ -1,9 +1,7 @@
 // Hybrid spell checking: Traditional for quick feedback, AI for deep contextual analysis
-// Strategy: Traditional first (fast), then AI reviews everything and becomes source of truth
 
-import { traditionalSpellCheck, addCustomWords } from './traditional.js';
+import { traditionalSpellCheck } from './traditional.js';
 import { aiSpellCheck } from './ai.js';
-import { pipe, unique, partition, Result } from '../utils/fp.js';
 
 // Calculate confidence score based on error type and source
 const calculateConfidence = (error) => {
@@ -22,13 +20,11 @@ const enrichError = (error, index) => ({
   suggestions: error.suggestions || (error.suggestion ? [error.suggestion] : []),
 });
 
-// Main hybrid spell check function
-// For full check: AI only (faster). For quick check: traditional only.
+// Full hybrid spell check: AI as primary, traditional as fallback
 export const hybridSpellCheck = async ({
   speakerNotes,
   slideContent = '',
   terminology = [],
-  options = {},
 }) => {
   const startTime = Date.now();
   const results = {
@@ -40,7 +36,7 @@ export const hybridSpellCheck = async ({
     },
   };
 
-  // Go straight to AI - it handles everything
+  // Go straight to AI - it handles spelling, terminology, and grammar
   const aiResult = await aiSpellCheck({
     speakerNotes,
     slideContent,
@@ -61,16 +57,10 @@ export const hybridSpellCheck = async ({
   }
 
   results.stats.totalTime = Date.now() - startTime;
-
   return results;
 };
 
-// Quick check mode: traditional only, for real-time feedback while typing
+// Quick check: traditional only, for real-time feedback
 export const quickCheck = async (speakerNotes, terminology = []) => {
   return traditionalSpellCheck(speakerNotes, terminology);
-};
-
-// Full check mode: hybrid with AI as source of truth
-export const fullCheck = async ({ speakerNotes, slideContent, terminology }) => {
-  return hybridSpellCheck({ speakerNotes, slideContent, terminology });
 };
