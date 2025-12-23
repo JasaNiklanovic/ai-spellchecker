@@ -146,24 +146,72 @@ const showPopup = (errorIndex, anchorElement) => {
   elements.navPrev.disabled = errorIndex === 0;
   elements.navNext.disabled = errorIndex === state.errors.length - 1;
 
-  // Position popup near the clicked element
-  const rect = anchorElement.getBoundingClientRect();
+  // Position popup near the clicked element, never covering it
+  let rect = anchorElement.getBoundingClientRect();
+
+  // Show popup off-screen first to measure its actual size
+  elements.popup.style.visibility = 'hidden';
+  elements.popup.classList.remove('hidden');
   const popupRect = elements.popup.getBoundingClientRect();
+  const popupHeight = popupRect.height;
+  const popupWidth = popupRect.width;
 
-  let top = rect.bottom + 10;
-  let left = rect.left;
+  const gap = 12; // Space between highlight and popup
+  const margin = 16; // Margin from viewport edges
 
-  // Keep popup in viewport
-  if (left + 350 > window.innerWidth) {
-    left = window.innerWidth - 360;
+  // Check if we need to scroll - ensure highlight is visible with room for popup
+  const totalNeeded = rect.height + gap + popupHeight + margin * 2;
+  const isHighlightVisible = rect.top >= margin && rect.bottom <= window.innerHeight - margin;
+
+  if (!isHighlightVisible) {
+    // Scroll the highlight into view, positioning it so there's room for popup
+    const editorContent = document.getElementById('editorContent');
+    const editorRect = editorContent.getBoundingClientRect();
+
+    // Calculate where to scroll - prefer showing highlight with popup below
+    const targetScrollTop = anchorElement.offsetTop - editorContent.offsetTop - 100;
+    editorContent.scrollTop = Math.max(0, targetScrollTop);
+
+    // Recalculate rect after scroll
+    rect = anchorElement.getBoundingClientRect();
   }
-  if (top + 300 > window.innerHeight) {
-    top = rect.top - 310;
+
+  // Calculate available space above and below
+  const spaceBelow = window.innerHeight - rect.bottom - gap - margin;
+  const spaceAbove = rect.top - gap - margin;
+
+  let top, left;
+
+  // Prefer below, but go above if not enough space
+  if (spaceBelow >= popupHeight || spaceBelow >= spaceAbove) {
+    // Position below
+    top = rect.bottom + gap;
+    // If it would overflow bottom, constrain it
+    if (top + popupHeight > window.innerHeight - margin) {
+      top = window.innerHeight - popupHeight - margin;
+    }
+  } else {
+    // Position above
+    top = rect.top - popupHeight - gap;
+    // If it would overflow top, constrain it
+    if (top < margin) {
+      top = margin;
+    }
+  }
+
+  // Horizontal positioning - center on the highlight, but keep in viewport
+  left = rect.left + (rect.width / 2) - (popupWidth / 2);
+
+  // Keep within horizontal bounds
+  if (left < margin) {
+    left = margin;
+  } else if (left + popupWidth > window.innerWidth - margin) {
+    left = window.innerWidth - popupWidth - margin;
   }
 
   elements.popup.style.top = `${top}px`;
   elements.popup.style.left = `${left}px`;
-  elements.popup.classList.remove('hidden');
+  elements.popup.style.visibility = 'visible';
 };
 
 const hidePopup = () => {
@@ -174,10 +222,9 @@ const hidePopup = () => {
 const navigateError = (direction) => {
   const newIndex = state.currentErrorIndex + direction;
   if (newIndex >= 0 && newIndex < state.errors.length) {
-    const highlights = document.querySelectorAll('.error-highlight');
-    const targetHighlight = highlights[newIndex];
+    // Find highlight by data-error-index, not DOM position
+    const targetHighlight = document.querySelector(`.error-highlight[data-error-index="${newIndex}"]`);
     if (targetHighlight) {
-      targetHighlight.scrollIntoView({ behavior: 'smooth', block: 'center' });
       showPopup(newIndex, targetHighlight);
     }
   }
@@ -214,9 +261,10 @@ const handleAccept = () => {
   // Navigate to next error or close popup
   if (state.errors.length > 0) {
     const nextIndex = Math.min(state.currentErrorIndex, state.errors.length - 1);
-    const highlights = document.querySelectorAll('.error-highlight');
-    if (highlights[nextIndex]) {
-      showPopup(nextIndex, highlights[nextIndex]);
+    // Find highlight by data-error-index, not DOM position
+    const targetHighlight = document.querySelector(`.error-highlight[data-error-index="${nextIndex}"]`);
+    if (targetHighlight) {
+      showPopup(nextIndex, targetHighlight);
     } else {
       hidePopup();
     }
@@ -237,9 +285,10 @@ const handleDismiss = () => {
   // Navigate to next error or close popup
   if (state.errors.length > 0) {
     const nextIndex = Math.min(state.currentErrorIndex, state.errors.length - 1);
-    const highlights = document.querySelectorAll('.error-highlight');
-    if (highlights[nextIndex]) {
-      showPopup(nextIndex, highlights[nextIndex]);
+    // Find highlight by data-error-index, not DOM position
+    const targetHighlight = document.querySelector(`.error-highlight[data-error-index="${nextIndex}"]`);
+    if (targetHighlight) {
+      showPopup(nextIndex, targetHighlight);
     } else {
       hidePopup();
     }
@@ -292,6 +341,13 @@ const handleCheck = async () => {
       source: 'traditional',
     }));
 
+    // Sort by position in text so navigation follows reading order
+    traditionalErrors.sort((a, b) => {
+      const posA = text.toLowerCase().indexOf(a.word.toLowerCase());
+      const posB = text.toLowerCase().indexOf(b.word.toLowerCase());
+      return posA - posB;
+    });
+
     state.errors = traditionalErrors;
     applyHighlights(text, state.errors);
     updateResultsInfo();
@@ -332,7 +388,15 @@ const handleCheck = async () => {
         const remainingWords = new Set(filteredTraditional.map(e => e.word.toLowerCase()));
         const newAiErrors = aiErrors.filter(e => !remainingWords.has(e.word.toLowerCase()));
 
-        state.errors = [...filteredTraditional, ...newAiErrors];
+        // Merge and sort by position in text so navigation follows reading order
+        const mergedErrors = [...filteredTraditional, ...newAiErrors];
+        mergedErrors.sort((a, b) => {
+          const posA = text.toLowerCase().indexOf(a.word.toLowerCase());
+          const posB = text.toLowerCase().indexOf(b.word.toLowerCase());
+          return posA - posB;
+        });
+
+        state.errors = mergedErrors;
         applyHighlights(text, state.errors);
         updateResultsInfo();
       }
