@@ -1,274 +1,347 @@
-// Frontend application - Simplified UX
-// AI handles terminology automatically, user just pastes content and clicks check
+// Speaker Notes Spell Checker - Grammarly-inspired UI
+// Traditional check first, AI adds more if enabled
 
 // ============================================
-// State Management
+// State
 // ============================================
 
-const createStore = (initialState) => {
-  let state = initialState;
-  const listeners = new Set();
-
-  return {
-    getState: () => state,
-    setState: (updater) => {
-      state = typeof updater === 'function' ? updater(state) : { ...state, ...updater };
-      listeners.forEach(fn => fn(state));
-    },
-    subscribe: (fn) => {
-      listeners.add(fn);
-      return () => listeners.delete(fn);
-    },
-  };
-};
-
-const store = createStore({
+const state = {
   errors: [],
-  isLoading: false,
-  lastCheck: null,
-  stats: null,
+  currentErrorIndex: -1,
+  originalText: '',
   aiConfigured: false,
-});
-
-// ============================================
-// Pure Helper Functions
-// ============================================
-
-const escapeHtml = (text) =>
-  text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-
-const debounce = (fn, delay) => {
-  let timeoutId;
-  return (...args) => {
-    clearTimeout(timeoutId);
-    timeoutId = setTimeout(() => fn(...args), delay);
-  };
-};
-
-const sortByPosition = (errors) =>
-  [...errors].sort((a, b) => (b.start || 0) - (a.start || 0));
-
-const findWordPositions = (text, word) => {
-  const positions = [];
-  const regex = new RegExp(`\\b${word}\\b`, 'gi');
-  let match;
-  while ((match = regex.exec(text)) !== null) {
-    positions.push({ start: match.index, end: match.index + word.length });
-  }
-  return positions;
+  isChecking: false,
 };
 
 // ============================================
-// API Functions
+// DOM Elements
+// ============================================
+
+const elements = {
+  slideContent: document.getElementById('slideContent'),
+  editorContent: document.getElementById('editorContent'),
+  checkBtn: document.getElementById('checkBtn'),
+  aiToggle: document.getElementById('aiToggle'),
+  resultsInfo: document.getElementById('resultsInfo'),
+  issueCount: document.getElementById('issueCount'),
+  aiStatus: document.getElementById('aiStatus'),
+  // Popup elements
+  popup: document.getElementById('suggestionPopup'),
+  popupClose: document.getElementById('popupClose'),
+  popupContext: document.getElementById('popupContext'),
+  wrongWord: document.getElementById('wrongWord'),
+  correctWord: document.getElementById('correctWord'),
+  popupReason: document.getElementById('popupReason'),
+  btnAccept: document.getElementById('btnAccept'),
+  btnDismiss: document.getElementById('btnDismiss'),
+  navPrev: document.getElementById('navPrev'),
+  navNext: document.getElementById('navNext'),
+  currentIndex: document.getElementById('currentIndex'),
+  totalCount: document.getElementById('totalCount'),
+};
+
+// ============================================
+// API
 // ============================================
 
 const api = {
   checkHealth: () =>
     fetch('/api/health')
       .then(r => r.json())
-      .catch(() => ({ status: 'error', aiConfigured: false })),
+      .catch(() => ({ aiConfigured: false })),
 
-  quickCheck: (text) =>
+  traditionalCheck: (text) =>
     fetch('/api/check/quick', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text, terminology: [] }),
-    })
-      .then(r => r.json())
-      .catch(() => ({ errors: [], stats: {} })),
+    }).then(r => r.json()),
 
-  fullCheck: (speakerNotes, slideContent) =>
+  aiCheck: (speakerNotes, slideContent) =>
     fetch('/api/check/full', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ speakerNotes, slideContent, terminology: [] }),
-    })
-      .then(r => r.json())
-      .catch(() => ({ errors: [], stats: {}, fallbackMode: true })),
+    }).then(r => r.json()),
 };
 
 // ============================================
-// DOM References
+// Editor Functions
 // ============================================
 
-const elements = {
-  slideContent: document.getElementById('slideContent'),
-  speakerNotes: document.getElementById('speakerNotes'),
-  highlights: document.getElementById('highlights'),
-  quickCheck: document.getElementById('quickCheck'),
-  fullCheck: document.getElementById('fullCheck'),
-  errors: document.getElementById('errors'),
-  stats: document.getElementById('stats'),
-  status: document.getElementById('status'),
-  aiStatus: document.getElementById('aiStatus'),
+const getEditorText = () => {
+  return elements.editorContent.innerText || '';
 };
 
-// ============================================
-// Render Functions
-// ============================================
+const setEditorContent = (html) => {
+  elements.editorContent.innerHTML = html;
+};
 
-const renderHighlights = (text, errors) => {
+const escapeHtml = (text) =>
+  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+const escapeRegex = (str) =>
+  str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// Apply highlights to the editor content
+const applyHighlights = (text, errors) => {
   if (!errors.length) {
-    elements.highlights.innerHTML = escapeHtml(text);
+    setEditorContent(escapeHtml(text));
     return;
   }
 
-  const allPositions = errors.flatMap(error => {
-    const positions = findWordPositions(text, error.word);
-    return positions.map(pos => ({ ...pos, type: error.type }));
+  // Sort errors by word length (longest first to handle overlapping)
+  // Keep track of original indices for correct popup mapping
+  const sortedErrors = errors
+    .map((error, originalIndex) => ({ error, originalIndex }))
+    .sort((a, b) => b.error.word.length - a.error.word.length);
+
+  let html = escapeHtml(text);
+  const usedIndices = new Set();
+
+  sortedErrors.forEach(({ error, originalIndex }) => {
+    const escapedWord = escapeHtml(error.word);
+    const regex = new RegExp(`\\b(${escapeRegex(escapedWord)})\\b`, 'gi');
+
+    html = html.replace(regex, (match) => {
+      const typeClass = error.type === 'terminology' ? 'terminology' :
+                        error.type === 'grammar' ? 'grammar' : '';
+      return `<span class="error-highlight ${typeClass}" data-error-index="${originalIndex}">${match}</span>`;
+    });
   });
 
-  const sorted = sortByPosition(allPositions);
+  setEditorContent(html);
 
-  let result = text;
-  sorted.forEach(({ start, end, type }) => {
-    const word = result.slice(start, end);
-    const className = type === 'grammar' || type === 'tone' ? 'highlight-warning' : 'highlight-error';
-    result = result.slice(0, start) +
-      `<mark class="${className}">${escapeHtml(word)}</mark>` +
-      result.slice(end);
+  // Reattach click handlers to highlights
+  document.querySelectorAll('.error-highlight').forEach(el => {
+    el.addEventListener('click', handleHighlightClick);
   });
-
-  elements.highlights.innerHTML = result;
-};
-
-const getTypeLabel = (type) => {
-  const labels = {
-    spelling: 'Spelling',
-    terminology: 'Terminology',
-    tone: 'Tone',
-    grammar: 'Grammar',
-  };
-  return labels[type] || type;
-};
-
-const getTypeClass = (type) => {
-  if (type === 'tone' || type === 'grammar') return 'warning';
-  if (type === 'terminology') return 'terminology';
-  return '';
-};
-
-const renderErrors = (errors) => {
-  if (!errors.length) {
-    elements.errors.innerHTML = '<p class="placeholder success">No issues found! Your speaker notes look good.</p>';
-    return;
-  }
-
-  elements.errors.innerHTML = errors.map(error => `
-    <div class="error-card ${getTypeClass(error.type)} ${error.confidence === 'low' ? 'low-confidence' : ''}" data-word="${escapeHtml(error.word)}">
-      <div class="error-header">
-        <span class="error-word">${escapeHtml(error.word)}</span>
-        <span class="error-type ${error.type}">${getTypeLabel(error.type)}</span>
-      </div>
-      <div class="error-reason">${escapeHtml(error.reason)}</div>
-      ${error.context ? `<div class="error-context">"...${escapeHtml(error.context)}..."</div>` : ''}
-      <div class="suggestions">
-        ${(error.suggestions || []).slice(0, 5).map(s => `
-          <button class="suggestion" data-original="${escapeHtml(error.word)}" data-suggestion="${escapeHtml(s)}">
-            ${escapeHtml(s)}
-          </button>
-        `).join('')}
-      </div>
-    </div>
-  `).join('');
-};
-
-const renderStats = (stats) => {
-  if (!stats) {
-    elements.stats.innerHTML = '';
-    return;
-  }
-
-  const parts = [];
-  if (stats.ai?.usage) {
-    parts.push(`<span>AI tokens: ${stats.ai.usage.inputTokens + stats.ai.usage.outputTokens}</span>`);
-  }
-  if (stats.totalTime) {
-    parts.push(`<span>${stats.totalTime}ms</span>`);
-  }
-
-  elements.stats.innerHTML = parts.join('');
-};
-
-const setStatus = (text, type = '') => {
-  elements.status.textContent = text;
-  elements.status.className = `status ${type}`;
-};
-
-const setLoading = (isLoading) => {
-  elements.quickCheck.disabled = isLoading;
-  elements.fullCheck.disabled = isLoading;
-  setStatus(isLoading ? 'Analyzing...' : 'Ready', isLoading ? 'loading' : '');
 };
 
 // ============================================
-// Event Handlers
+// Popup Functions
 // ============================================
 
-const handleQuickCheck = async () => {
-  const text = elements.speakerNotes.value;
-  if (!text.trim()) {
-    setStatus('Enter speaker notes first', 'error');
-    return;
+const showPopup = (errorIndex, anchorElement) => {
+  const error = state.errors[errorIndex];
+  if (!error) return;
+
+  state.currentErrorIndex = errorIndex;
+
+  // Update popup content
+  const text = getEditorText();
+  const wordIndex = text.toLowerCase().indexOf(error.word.toLowerCase());
+  const contextStart = Math.max(0, wordIndex - 30);
+  const contextEnd = Math.min(text.length, wordIndex + error.word.length + 30);
+  const context = '...' + text.slice(contextStart, contextEnd) + '...';
+
+  elements.popupContext.textContent = context;
+  elements.wrongWord.textContent = error.word;
+  elements.correctWord.textContent = error.suggestions?.[0] || error.suggestion || '?';
+  elements.popupReason.textContent = error.reason || 'Potential issue';
+
+  // Update navigation
+  elements.currentIndex.textContent = errorIndex + 1;
+  elements.totalCount.textContent = state.errors.length;
+  elements.navPrev.disabled = errorIndex === 0;
+  elements.navNext.disabled = errorIndex === state.errors.length - 1;
+
+  // Position popup near the clicked element
+  const rect = anchorElement.getBoundingClientRect();
+  const popupRect = elements.popup.getBoundingClientRect();
+
+  let top = rect.bottom + 10;
+  let left = rect.left;
+
+  // Keep popup in viewport
+  if (left + 350 > window.innerWidth) {
+    left = window.innerWidth - 360;
+  }
+  if (top + 300 > window.innerHeight) {
+    top = rect.top - 310;
   }
 
-  setLoading(true);
-  try {
-    const result = await api.quickCheck(text);
-    store.setState({
-      errors: result.errors || [],
-      stats: { traditional: result.stats },
-      lastCheck: 'quick',
-    });
-  } catch (error) {
-    setStatus('Check failed', 'error');
-  } finally {
-    setLoading(false);
+  elements.popup.style.top = `${top}px`;
+  elements.popup.style.left = `${left}px`;
+  elements.popup.classList.remove('hidden');
+};
+
+const hidePopup = () => {
+  elements.popup.classList.add('hidden');
+  state.currentErrorIndex = -1;
+};
+
+const navigateError = (direction) => {
+  const newIndex = state.currentErrorIndex + direction;
+  if (newIndex >= 0 && newIndex < state.errors.length) {
+    const highlights = document.querySelectorAll('.error-highlight');
+    const targetHighlight = highlights[newIndex];
+    if (targetHighlight) {
+      targetHighlight.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      showPopup(newIndex, targetHighlight);
+    }
   }
 };
 
-const handleFullCheck = async () => {
-  const speakerNotes = elements.speakerNotes.value;
-  if (!speakerNotes.trim()) {
-    setStatus('Enter speaker notes first', 'error');
-    return;
-  }
+// ============================================
+// Action Handlers
+// ============================================
 
+const handleHighlightClick = (e) => {
+  const index = parseInt(e.target.dataset.errorIndex, 10);
+  showPopup(index, e.target);
+};
+
+const handleAccept = () => {
+  const error = state.errors[state.currentErrorIndex];
+  if (!error) return;
+
+  const text = getEditorText();
+  const suggestion = error.suggestions?.[0] || error.suggestion;
+  if (!suggestion) return;
+
+  // Replace the word in text
+  const regex = new RegExp(`\\b${escapeRegex(error.word)}\\b`, 'gi');
+  const newText = text.replace(regex, suggestion);
+
+  // Remove this error from the list
+  state.errors.splice(state.currentErrorIndex, 1);
+
+  // Re-apply highlights
+  applyHighlights(newText, state.errors);
+  updateResultsInfo();
+
+  // Navigate to next error or close popup
+  if (state.errors.length > 0) {
+    const nextIndex = Math.min(state.currentErrorIndex, state.errors.length - 1);
+    const highlights = document.querySelectorAll('.error-highlight');
+    if (highlights[nextIndex]) {
+      showPopup(nextIndex, highlights[nextIndex]);
+    } else {
+      hidePopup();
+    }
+  } else {
+    hidePopup();
+  }
+};
+
+const handleDismiss = () => {
+  // Remove this error from the list without fixing
+  state.errors.splice(state.currentErrorIndex, 1);
+
+  // Re-apply highlights
+  const text = getEditorText();
+  applyHighlights(text, state.errors);
+  updateResultsInfo();
+
+  // Navigate to next error or close popup
+  if (state.errors.length > 0) {
+    const nextIndex = Math.min(state.currentErrorIndex, state.errors.length - 1);
+    const highlights = document.querySelectorAll('.error-highlight');
+    if (highlights[nextIndex]) {
+      showPopup(nextIndex, highlights[nextIndex]);
+    } else {
+      hidePopup();
+    }
+  } else {
+    hidePopup();
+  }
+};
+
+const updateResultsInfo = () => {
+  if (state.errors.length > 0) {
+    elements.resultsInfo.classList.remove('hidden');
+    elements.issueCount.textContent = state.errors.length;
+  } else {
+    elements.resultsInfo.classList.add('hidden');
+  }
+};
+
+// ============================================
+// Check Functions
+// ============================================
+
+const setLoading = (loading, text = 'Check Spelling') => {
+  state.isChecking = loading;
+  elements.checkBtn.disabled = loading;
+
+  if (loading) {
+    elements.checkBtn.innerHTML = `<span class="spinner"></span> Checking...`;
+    elements.checkBtn.classList.add('loading');
+  } else {
+    elements.checkBtn.innerHTML = text;
+    elements.checkBtn.classList.remove('loading');
+  }
+};
+
+const handleCheck = async () => {
+  const text = getEditorText();
+  if (!text.trim()) return;
+
+  hidePopup();
   setLoading(true);
-  setStatus('AI analyzing...', 'loading');
+  state.errors = [];
+  state.originalText = text;
 
   try {
-    const result = await api.fullCheck(
-      speakerNotes,
-      elements.slideContent.value
-    );
-    store.setState({
-      errors: result.errors || [],
-      stats: result.stats,
-      lastCheck: 'full',
-    });
+    // Step 1: Traditional check (always runs)
+    const traditionalResult = await api.traditionalCheck(text);
+    const traditionalErrors = (traditionalResult.errors || []).map(err => ({
+      ...err,
+      reason: err.reason || 'Possible misspelling',
+      source: 'traditional',
+    }));
 
-    if (result.fallbackMode) {
-      setStatus('AI unavailable, used dictionary only');
+    state.errors = traditionalErrors;
+    applyHighlights(text, state.errors);
+    updateResultsInfo();
+
+    // Step 2: AI check (if toggle is on)
+    if (elements.aiToggle.checked && state.aiConfigured) {
+      setLoading(true, 'AI analyzing...');
+      elements.checkBtn.innerHTML = `<span class="spinner"></span> AI analyzing...`;
+
+      const slideContent = elements.slideContent.value;
+      const aiResult = await api.aiCheck(text, slideContent);
+
+      if (aiResult.errors && aiResult.errors.length > 0) {
+        // Smart merge: AI wins for terminology/contextual conflicts
+        // Traditional is good for obvious typos, AI is better for context
+        const aiErrors = aiResult.errors.map(e => ({ ...e, source: 'ai' }));
+
+        // Build a map of AI errors by word for quick lookup
+        const aiErrorsByWord = new Map();
+        aiErrors.forEach(e => aiErrorsByWord.set(e.word.toLowerCase(), e));
+
+        // Filter traditional errors: keep unless AI has a better contextual suggestion
+        const filteredTraditional = state.errors.filter(tradErr => {
+          const aiErr = aiErrorsByWord.get(tradErr.word.toLowerCase());
+          if (!aiErr) return true; // AI didn't flag this word, keep traditional
+
+          // AI flagged the same word - AI wins if it's terminology/contextual
+          // (AI has slide context, so its suggestion is more relevant)
+          if (aiErr.type === 'terminology' || aiErr.type === 'grammar') {
+            return false; // Remove traditional, AI will provide better suggestion
+          }
+
+          // Both flagged as spelling - keep traditional (it's already displayed)
+          return true;
+        });
+
+        // Add AI errors that aren't duplicates of remaining traditional errors
+        const remainingWords = new Set(filteredTraditional.map(e => e.word.toLowerCase()));
+        const newAiErrors = aiErrors.filter(e => !remainingWords.has(e.word.toLowerCase()));
+
+        state.errors = [...filteredTraditional, ...newAiErrors];
+        applyHighlights(text, state.errors);
+        updateResultsInfo();
+      }
     }
   } catch (error) {
-    setStatus('Check failed', 'error');
+    console.error('Check failed:', error);
   } finally {
     setLoading(false);
   }
-};
-
-const handleApplySuggestion = (original, suggestion) => {
-  const text = elements.speakerNotes.value;
-  const regex = new RegExp(`\\b${original}\\b`, 'g');
-  elements.speakerNotes.value = text.replace(regex, suggestion);
-
-  store.setState(state => ({
-    errors: state.errors.filter(e => e.word.toLowerCase() !== original.toLowerCase()),
-  }));
 };
 
 // ============================================
@@ -278,41 +351,53 @@ const handleApplySuggestion = (original, suggestion) => {
 const init = async () => {
   // Check API health
   const health = await api.checkHealth();
-  store.setState({ aiConfigured: health.aiConfigured });
+  state.aiConfigured = health.aiConfigured;
 
   elements.aiStatus.textContent = health.aiConfigured ? 'Connected' : 'Not configured';
   elements.aiStatus.className = health.aiConfigured ? '' : 'disabled';
 
-  // Subscribe to state changes
-  store.subscribe(state => {
-    renderErrors(state.errors);
-    renderStats(state.stats);
-    renderHighlights(elements.speakerNotes.value, state.errors);
-  });
+  // If AI not configured, disable toggle
+  if (!health.aiConfigured) {
+    elements.aiToggle.disabled = true;
+  }
 
   // Event listeners
-  elements.quickCheck.addEventListener('click', handleQuickCheck);
-  elements.fullCheck.addEventListener('click', handleFullCheck);
+  elements.checkBtn.addEventListener('click', handleCheck);
+  elements.popupClose.addEventListener('click', hidePopup);
+  elements.btnAccept.addEventListener('click', handleAccept);
+  elements.btnDismiss.addEventListener('click', handleDismiss);
+  elements.navPrev.addEventListener('click', () => navigateError(-1));
+  elements.navNext.addEventListener('click', () => navigateError(1));
 
-  elements.errors.addEventListener('click', (e) => {
-    if (e.target.classList.contains('suggestion')) {
-      const { original, suggestion } = e.target.dataset;
-      handleApplySuggestion(original, suggestion);
-      e.target.classList.add('applied');
+  // Close popup when clicking outside
+  document.addEventListener('click', (e) => {
+    if (!elements.popup.contains(e.target) &&
+        !e.target.classList.contains('error-highlight')) {
+      hidePopup();
     }
   });
 
-  // Sync highlights with textarea scroll
-  elements.speakerNotes.addEventListener('scroll', () => {
-    elements.highlights.scrollTop = elements.speakerNotes.scrollTop;
+  // Handle keyboard navigation
+  document.addEventListener('keydown', (e) => {
+    if (elements.popup.classList.contains('hidden')) return;
+
+    if (e.key === 'Escape') {
+      hidePopup();
+    } else if (e.key === 'ArrowLeft') {
+      navigateError(-1);
+    } else if (e.key === 'ArrowRight') {
+      navigateError(1);
+    } else if (e.key === 'Enter') {
+      handleAccept();
+    }
   });
 
-  // Re-render highlights on text change
-  elements.speakerNotes.addEventListener('input', debounce(() => {
-    renderHighlights(elements.speakerNotes.value, store.getState().errors);
-  }, 100));
-
-  setStatus('Ready');
+  // Paste as plain text
+  elements.editorContent.addEventListener('paste', (e) => {
+    e.preventDefault();
+    const text = e.clipboardData.getData('text/plain');
+    document.execCommand('insertText', false, text);
+  });
 };
 
 init();

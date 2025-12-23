@@ -9,69 +9,93 @@
 <body>
   <div class="container">
     <header>
-      <h1>AI Speaker Notes Spell Checker</h1>
+      <h1>Speaker Notes Spell Checker</h1>
       <p class="subtitle">Context-aware spell checking for presentations</p>
     </header>
 
     <main>
-      <div class="panels">
-        <!-- Slide Content Panel -->
-        <section class="panel slide-panel">
-          <div class="panel-header">
-            <h2>Slide Content</h2>
-            <span class="hint">Paste slide content for context-aware checking</span>
-          </div>
-          <textarea
-            id="slideContent"
-            placeholder="Paste your slide content here...
+      <!-- Slide Content - Full Width -->
+      <section class="slide-section">
+        <label for="slideContent">Slide Content</label>
+        <textarea
+          id="slideContent"
+          placeholder="Paste your slide content here for context-aware terminology checking..."
+          rows="3"
+        ></textarea>
+      </section>
 
-The AI will use this to understand your terminology, brand names, and context. Terms from your slides won't be flagged as errors."
-          ></textarea>
+      <!-- Main Editor Area - 80/20 Split -->
+      <div class="editor-area">
+        <!-- Speaker Notes - 80% -->
+        <section class="notes-section">
+          <label for="speakerNotes">Speaker Notes</label>
+          <div class="editor-container">
+            <div id="editorContent" class="editor-content" contenteditable="true" data-placeholder="Type or paste your speaker notes here..."></div>
+          </div>
         </section>
 
-        <!-- Speaker Notes Panel -->
-        <section class="panel notes-panel">
-          <div class="panel-header">
-            <h2>Speaker Notes</h2>
-            <div class="check-buttons">
-              <button id="quickCheck" class="btn btn-secondary" title="Fast dictionary check">Quick Check</button>
-              <button id="fullCheck" class="btn btn-primary" title="Deep AI contextual analysis">Full AI Check</button>
+        <!-- Control Panel - 20% -->
+        <aside class="control-panel">
+          <div class="panel-content">
+            <h2>Spell Check</h2>
+            <p class="panel-description">Check your speaker notes for spelling, grammar, and terminology issues.</p>
+
+            <div class="ai-toggle-section">
+              <div class="toggle-row">
+                <span class="toggle-label">Include AI</span>
+                <label class="ai-toggle">
+                  <input type="checkbox" id="aiToggle">
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              <p class="toggle-description">
+                AI checks terminology against your slide content and catches contextual issues.
+                <span class="token-note">Uses tokens from your plan.</span>
+              </p>
+            </div>
+
+            <button id="checkBtn" class="check-button">
+              Check Spelling
+            </button>
+
+            <div id="resultsInfo" class="results-info hidden">
+              <div class="results-count">
+                <span id="issueCount">0</span> issues found
+              </div>
+              <p class="results-hint">Click underlined words to see suggestions</p>
             </div>
           </div>
-          <div class="editor-container">
-            <textarea
-              id="speakerNotes"
-              placeholder="Type or paste your speaker notes here...
 
-The AI will check for:
-• Spelling errors
-• Terminology consistency with your slides
-• Tone and grammar issues
-• Brand name accuracy"
-            ></textarea>
-            <div id="highlights" class="highlights"></div>
+          <div class="panel-footer">
+            <span class="ai-status">AI: <span id="aiStatus">Checking...</span></span>
           </div>
-        </section>
+        </aside>
       </div>
-
-      <!-- Results Panel -->
-      <section class="results-panel" id="resultsPanel">
-        <div class="results-header">
-          <h2>Results</h2>
-          <div id="stats" class="stats"></div>
-        </div>
-        <div id="errors" class="errors-list">
-          <p class="placeholder">Click "Full AI Check" to analyze your speaker notes</p>
-        </div>
-      </section>
     </main>
 
-    <footer>
-      <div class="status" id="status">Ready</div>
-      <div class="ai-status">
-        AI: <span id="aiStatus">Checking...</span>
+    <!-- Floating Suggestion Popup -->
+    <div id="suggestionPopup" class="suggestion-popup hidden">
+      <div class="popup-header">
+        <span class="popup-title">Suggestion</span>
+        <button class="popup-close" id="popupClose">&times;</button>
       </div>
-    </footer>
+      <div class="popup-context" id="popupContext"></div>
+      <div class="popup-suggestion">
+        <span class="wrong-word" id="wrongWord"></span>
+        <span class="arrow">→</span>
+        <span class="correct-word" id="correctWord"></span>
+      </div>
+      <div class="popup-reason" id="popupReason"></div>
+      <div class="popup-actions">
+        <button class="btn-accept" id="btnAccept">Accept</button>
+        <button class="btn-dismiss" id="btnDismiss">Dismiss</button>
+      </div>
+      <div class="popup-nav">
+        <button class="nav-btn" id="navPrev">&lt;</button>
+        <span class="nav-count"><span id="currentIndex">1</span> / <span id="totalCount">1</span></span>
+        <button class="nav-btn" id="navNext">&gt;</button>
+      </div>
+    </div>
   </div>
 
   <script src="app.js"></script>
