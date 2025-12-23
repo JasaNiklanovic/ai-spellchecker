@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Speaker Notes Spell Checker</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>AI Speaker Notes Spell Checker</h1>
+      <p class="subtitle">Context-aware spell checking for presentations</p>
+    </header>
+
+    <main>
+      <div class="panels">
+        <!-- Slide Content Panel -->
+        <section class="panel slide-panel">
+          <div class="panel-header">
+            <h2>Slide Content</h2>
+            <span class="hint">Paste slide content for context-aware checking</span>
+          </div>
+          <textarea
+            id="slideContent"
+            placeholder="Paste your slide content here...
+
+The AI will use this to understand your terminology, brand names, and context. Terms from your slides won't be flagged as errors."
+          ></textarea>
+        </section>
+
+        <!-- Speaker Notes Panel -->
+        <section class="panel notes-panel">
+          <div class="panel-header">
+            <h2>Speaker Notes</h2>
+            <div class="check-buttons">
+              <button id="quickCheck" class="btn btn-secondary" title="Fast dictionary check">Quick Check</button>
+              <button id="fullCheck" class="btn btn-primary" title="Deep AI contextual analysis">Full AI Check</button>
+            </div>
+          </div>
+          <div class="editor-container">
+            <textarea
+              id="speakerNotes"
+              placeholder="Type or paste your speaker notes here...
+
+The AI will check for:
+• Spelling errors
+• Terminology consistency with your slides
+• Tone and grammar issues
+• Brand name accuracy"
+            ></textarea>
+            <div id="highlights" class="highlights"></div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Results Panel -->
+      <section class="results-panel" id="resultsPanel">
+        <div class="results-header">
+          <h2>Results</h2>
+          <div id="stats" class="stats"></div>
+        </div>
+        <div id="errors" class="errors-list">
+          <p class="placeholder">Click "Full AI Check" to analyze your speaker notes</p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="status" id="status">Ready</div>
+      <div class="ai-status">
+        AI: <span id="aiStatus">Checking...</span>
+      </div>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
