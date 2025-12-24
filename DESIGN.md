@@ -74,3 +74,6 @@ Detect audience level from slide content and suggest simplifications or elaborat
 
 ### 3. Timing Estimation
 Estimate speaking time per slide based on note length and complexity. Flag slides that are too dense (>3 min of notes) or too sparse (<30 sec). Help presenters balance their time across the deck.
+
+### 4. Personal Dictionary
+Allow users to add words to a personal dictionary so they won't be flagged as misspelled in the future. When a word is flagged, offer an "Add to dictionary" option alongside Accept and Dismiss. This is especially useful for names, technical terms, and company-specific jargon that the traditional spell checker doesn't recognize.

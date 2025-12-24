@@ -411,6 +411,31 @@ main {
   color: var(--text-muted);
 }
 
+/* Correct All Button */
+.correct-all-button {
+  width: 100%;
+  padding: 12px 20px;
+  margin: 16px 0;
+  background: linear-gradient(135deg, var(--success) 0%, #059669 100%);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.25);
+}
+
+.correct-all-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+}
+
+.correct-all-button:active {
+  transform: translateY(0);
+}
+
 /* Panel Footer */
 .panel-footer {
   padding: 18px 28px;
