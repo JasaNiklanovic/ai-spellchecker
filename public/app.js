@@ -24,6 +24,7 @@ const elements = {
   aiToggle: document.getElementById('aiToggle'),
   resultsInfo: document.getElementById('resultsInfo'),
   issueCount: document.getElementById('issueCount'),
+  correctAllBtn: document.getElementById('correctAllBtn'),
   aiStatus: document.getElementById('aiStatus'),
   // Popup elements
   popup: document.getElementById('suggestionPopup'),
@@ -70,7 +71,10 @@ const api = {
 // ============================================
 
 const getEditorText = () => {
-  return elements.editorContent.innerText || '';
+  // innerText can produce extra newlines from div/br structure
+  // Normalize: collapse 3+ newlines to 2 (preserve paragraph breaks)
+  const text = elements.editorContent.innerText || '';
+  return text.replace(/\n{3,}/g, '\n\n').trim();
 };
 
 const setEditorContent = (html) => {
@@ -297,6 +301,44 @@ const handleDismiss = () => {
   }
 };
 
+const handleCorrectAll = () => {
+  if (state.errors.length === 0) return;
+
+  hidePopup();
+  let text = getEditorText();
+
+  // Find positions and sort by position descending (end to start)
+  // This preserves character positions as we make replacements
+  const errorsWithPositions = state.errors
+    .map(error => {
+      const suggestion = error.suggestions?.[0] || error.suggestion;
+      if (!suggestion) return null;
+
+      const regex = new RegExp(`\\b${escapeRegex(error.word)}\\b`, 'gi');
+      const match = regex.exec(text);
+      if (!match) return null;
+
+      return {
+        error,
+        suggestion,
+        position: match.index,
+        word: match[0], // Use actual matched word (preserves case)
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.position - a.position); // Sort descending by position
+
+  // Apply all corrections from end to start
+  errorsWithPositions.forEach(({ position, word, suggestion }) => {
+    text = text.slice(0, position) + suggestion + text.slice(position + word.length);
+  });
+
+  // Clear all errors and update UI
+  state.errors = [];
+  setEditorContent(escapeHtml(text));
+  updateResultsInfo();
+};
+
 const updateResultsInfo = () => {
   if (state.errors.length > 0) {
     elements.resultsInfo.classList.remove('hidden');
@@ -427,6 +469,7 @@ const init = async () => {
 
   // Event listeners
   elements.checkBtn.addEventListener('click', handleCheck);
+  elements.correctAllBtn.addEventListener('click', handleCorrectAll);
   elements.popupClose.addEventListener('click', hidePopup);
   elements.btnAccept.addEventListener('click', handleAccept);
   elements.btnDismiss.addEventListener('click', handleDismiss);
