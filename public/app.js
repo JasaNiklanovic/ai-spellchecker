@@ -1,5 +1,4 @@
-// Speaker Notes Spell Checker - Grammarly-inspired UI
-// Traditional check first, AI adds more if enabled
+// Speaker Notes Spell Checker - Compact UI with Modal
 
 // ============================================
 // State
@@ -11,6 +10,7 @@ const state = {
   originalText: '',
   aiConfigured: false,
   isChecking: false,
+  slideContext: '',
 };
 
 // ============================================
@@ -26,6 +26,13 @@ const elements = {
   issueCount: document.getElementById('issueCount'),
   correctAllBtn: document.getElementById('correctAllBtn'),
   aiStatus: document.getElementById('aiStatus'),
+  editorStatus: document.getElementById('editorStatus'),
+  statusText: document.getElementById('statusText'),
+  // Context button & modal
+  slideContextBtn: document.getElementById('slideContextBtn'),
+  contextModal: document.getElementById('contextModal'),
+  modalClose: document.getElementById('modalClose'),
+  modalSave: document.getElementById('modalSave'),
   // Popup elements
   popup: document.getElementById('suggestionPopup'),
   popupClose: document.getElementById('popupClose'),
@@ -101,7 +108,6 @@ const applyHighlights = (text, errors) => {
     .sort((a, b) => b.error.word.length - a.error.word.length);
 
   let html = escapeHtml(text);
-  const usedIndices = new Set();
 
   sortedErrors.forEach(({ error, originalIndex }) => {
     const escapedWord = escapeHtml(error.word);
@@ -120,6 +126,36 @@ const applyHighlights = (text, errors) => {
   document.querySelectorAll('.error-highlight').forEach(el => {
     el.addEventListener('click', handleHighlightClick);
   });
+};
+
+// ============================================
+// Modal Functions
+// ============================================
+
+const openModal = () => {
+  elements.contextModal.classList.remove('hidden');
+  elements.slideContent.focus();
+};
+
+const closeModal = () => {
+  elements.contextModal.classList.add('hidden');
+};
+
+const saveContext = () => {
+  state.slideContext = elements.slideContent.value.trim();
+  updateContextButton();
+  closeModal();
+};
+
+const updateContextButton = () => {
+  if (state.slideContext) {
+    const wordCount = state.slideContext.split(/\s+/).length;
+    elements.slideContextBtn.innerHTML = `<span class="step-num">1</span> ${wordCount} words loaded`;
+    elements.slideContextBtn.classList.add('has-context');
+  } else {
+    elements.slideContextBtn.innerHTML = `<span class="step-num">1</span> Add slide context`;
+    elements.slideContextBtn.classList.remove('has-context');
+  }
 };
 
 // ============================================
@@ -160,23 +196,16 @@ const showPopup = (errorIndex, anchorElement) => {
   const popupHeight = popupRect.height;
   const popupWidth = popupRect.width;
 
-  const gap = 12; // Space between highlight and popup
-  const margin = 16; // Margin from viewport edges
+  const gap = 12;
+  const margin = 16;
 
-  // Check if we need to scroll - ensure highlight is visible with room for popup
-  const totalNeeded = rect.height + gap + popupHeight + margin * 2;
+  // Check if we need to scroll
   const isHighlightVisible = rect.top >= margin && rect.bottom <= window.innerHeight - margin;
 
   if (!isHighlightVisible) {
-    // Scroll the highlight into view, positioning it so there's room for popup
     const editorContent = document.getElementById('editorContent');
-    const editorRect = editorContent.getBoundingClientRect();
-
-    // Calculate where to scroll - prefer showing highlight with popup below
     const targetScrollTop = anchorElement.offsetTop - editorContent.offsetTop - 100;
     editorContent.scrollTop = Math.max(0, targetScrollTop);
-
-    // Recalculate rect after scroll
     rect = anchorElement.getBoundingClientRect();
   }
 
@@ -188,25 +217,20 @@ const showPopup = (errorIndex, anchorElement) => {
 
   // Prefer below, but go above if not enough space
   if (spaceBelow >= popupHeight || spaceBelow >= spaceAbove) {
-    // Position below
     top = rect.bottom + gap;
-    // If it would overflow bottom, constrain it
     if (top + popupHeight > window.innerHeight - margin) {
       top = window.innerHeight - popupHeight - margin;
     }
   } else {
-    // Position above
     top = rect.top - popupHeight - gap;
-    // If it would overflow top, constrain it
     if (top < margin) {
       top = margin;
     }
   }
 
-  // Horizontal positioning - center on the highlight, but keep in viewport
+  // Horizontal positioning
   left = rect.left + (rect.width / 2) - (popupWidth / 2);
 
-  // Keep within horizontal bounds
   if (left < margin) {
     left = margin;
   } else if (left + popupWidth > window.innerWidth - margin) {
@@ -226,7 +250,6 @@ const hidePopup = () => {
 const navigateError = (direction) => {
   const newIndex = state.currentErrorIndex + direction;
   if (newIndex >= 0 && newIndex < state.errors.length) {
-    // Find highlight by data-error-index, not DOM position
     const targetHighlight = document.querySelector(`.error-highlight[data-error-index="${newIndex}"]`);
     if (targetHighlight) {
       showPopup(newIndex, targetHighlight);
@@ -265,7 +288,6 @@ const handleAccept = () => {
   // Navigate to next error or close popup
   if (state.errors.length > 0) {
     const nextIndex = Math.min(state.currentErrorIndex, state.errors.length - 1);
-    // Find highlight by data-error-index, not DOM position
     const targetHighlight = document.querySelector(`.error-highlight[data-error-index="${nextIndex}"]`);
     if (targetHighlight) {
       showPopup(nextIndex, targetHighlight);
@@ -278,18 +300,14 @@ const handleAccept = () => {
 };
 
 const handleDismiss = () => {
-  // Remove this error from the list without fixing
   state.errors.splice(state.currentErrorIndex, 1);
 
-  // Re-apply highlights
   const text = getEditorText();
   applyHighlights(text, state.errors);
   updateResultsInfo();
 
-  // Navigate to next error or close popup
   if (state.errors.length > 0) {
     const nextIndex = Math.min(state.currentErrorIndex, state.errors.length - 1);
-    // Find highlight by data-error-index, not DOM position
     const targetHighlight = document.querySelector(`.error-highlight[data-error-index="${nextIndex}"]`);
     if (targetHighlight) {
       showPopup(nextIndex, targetHighlight);
@@ -308,7 +326,6 @@ const handleCorrectAll = () => {
   let text = getEditorText();
 
   // Find positions and sort by position descending (end to start)
-  // This preserves character positions as we make replacements
   const errorsWithPositions = state.errors
     .map(error => {
       const suggestion = error.suggestions?.[0] || error.suggestion;
@@ -322,11 +339,11 @@ const handleCorrectAll = () => {
         error,
         suggestion,
         position: match.index,
-        word: match[0], // Use actual matched word (preserves case)
+        word: match[0],
       };
     })
     .filter(Boolean)
-    .sort((a, b) => b.position - a.position); // Sort descending by position
+    .sort((a, b) => b.position - a.position);
 
   // Apply all corrections from end to start
   errorsWithPositions.forEach(({ position, word, suggestion }) => {
@@ -365,6 +382,21 @@ const setLoading = (loading, text = 'Check Spelling') => {
   }
 };
 
+const showStatus = (message, isDone = false) => {
+  elements.statusText.textContent = message;
+  elements.editorStatus.classList.remove('hidden', 'done');
+  if (isDone) {
+    elements.editorStatus.classList.add('done');
+    setTimeout(() => {
+      elements.editorStatus.classList.add('hidden');
+    }, 2000);
+  }
+};
+
+const hideStatus = () => {
+  elements.editorStatus.classList.add('hidden');
+};
+
 const handleCheck = async () => {
   const text = getEditorText();
   if (!text.trim()) return;
@@ -375,7 +407,9 @@ const handleCheck = async () => {
   state.originalText = text;
 
   try {
-    // Step 1: Traditional check (always runs)
+    const useAI = elements.aiToggle.checked && state.aiConfigured;
+
+    // Step 1: Traditional check (fast, no status needed)
     const traditionalResult = await api.traditionalCheck(text);
     const traditionalErrors = (traditionalResult.errors || []).map(err => ({
       ...err,
@@ -383,7 +417,7 @@ const handleCheck = async () => {
       source: 'traditional',
     }));
 
-    // Sort by position in text so navigation follows reading order
+    // Sort by position in text
     traditionalErrors.sort((a, b) => {
       const posA = text.toLowerCase().indexOf(a.word.toLowerCase());
       const posB = text.toLowerCase().indexOf(b.word.toLowerCase());
@@ -395,42 +429,32 @@ const handleCheck = async () => {
     updateResultsInfo();
 
     // Step 2: AI check (if toggle is on)
-    if (elements.aiToggle.checked && state.aiConfigured) {
-      setLoading(true, 'AI analyzing...');
-      elements.checkBtn.innerHTML = `<span class="spinner"></span> AI analyzing...`;
+    if (useAI) {
+      showStatus('Typos checked. AI matching your brand terminology ...');
+      elements.checkBtn.innerHTML = `<span class="spinner"></span> Checking with AI ...`;
+      elements.checkBtn.disabled = true;
 
-      const slideContent = elements.slideContent.value;
+      const slideContent = state.slideContext;
       const aiResult = await api.aiCheck(text, slideContent);
 
       if (aiResult.errors && aiResult.errors.length > 0) {
-        // Smart merge: AI wins for terminology/contextual conflicts
-        // Traditional is good for obvious typos, AI is better for context
         const aiErrors = aiResult.errors.map(e => ({ ...e, source: 'ai' }));
 
-        // Build a map of AI errors by word for quick lookup
         const aiErrorsByWord = new Map();
         aiErrors.forEach(e => aiErrorsByWord.set(e.word.toLowerCase(), e));
 
-        // Filter traditional errors: keep unless AI has a better contextual suggestion
         const filteredTraditional = state.errors.filter(tradErr => {
           const aiErr = aiErrorsByWord.get(tradErr.word.toLowerCase());
-          if (!aiErr) return true; // AI didn't flag this word, keep traditional
-
-          // AI flagged the same word - AI wins if it's terminology/contextual
-          // (AI has slide context, so its suggestion is more relevant)
+          if (!aiErr) return true;
           if (aiErr.type === 'terminology' || aiErr.type === 'grammar') {
-            return false; // Remove traditional, AI will provide better suggestion
+            return false;
           }
-
-          // Both flagged as spelling - keep traditional (it's already displayed)
           return true;
         });
 
-        // Add AI errors that aren't duplicates of remaining traditional errors
         const remainingWords = new Set(filteredTraditional.map(e => e.word.toLowerCase()));
         const newAiErrors = aiErrors.filter(e => !remainingWords.has(e.word.toLowerCase()));
 
-        // Merge and sort by position in text so navigation follows reading order
         const mergedErrors = [...filteredTraditional, ...newAiErrors];
         mergedErrors.sort((a, b) => {
           const posA = text.toLowerCase().indexOf(a.word.toLowerCase());
@@ -445,8 +469,12 @@ const handleCheck = async () => {
     }
   } catch (error) {
     console.error('Check failed:', error);
+    hideStatus();
   } finally {
     setLoading(false);
+    if (elements.aiToggle.checked && state.aiConfigured) {
+      showStatus('Done! Click underlined words to review.', true);
+    }
   }
 };
 
@@ -462,9 +490,9 @@ const init = async () => {
   elements.aiStatus.textContent = health.aiConfigured ? 'Connected' : 'Not configured';
   elements.aiStatus.className = health.aiConfigured ? '' : 'disabled';
 
-  // If AI not configured, disable toggle
   if (!health.aiConfigured) {
     elements.aiToggle.disabled = true;
+    elements.aiToggle.parentElement.style.opacity = '0.5';
   }
 
   // Event listeners
@@ -476,6 +504,12 @@ const init = async () => {
   elements.navPrev.addEventListener('click', () => navigateError(-1));
   elements.navNext.addEventListener('click', () => navigateError(1));
 
+  // Modal listeners
+  elements.slideContextBtn.addEventListener('click', openModal);
+  elements.modalClose.addEventListener('click', closeModal);
+  elements.modalSave.addEventListener('click', saveContext);
+  elements.contextModal.querySelector('.modal-backdrop').addEventListener('click', closeModal);
+
   // Close popup when clicking outside
   document.addEventListener('click', (e) => {
     if (!elements.popup.contains(e.target) &&
@@ -486,6 +520,12 @@ const init = async () => {
 
   // Handle keyboard navigation
   document.addEventListener('keydown', (e) => {
+    // Modal escape
+    if (!elements.contextModal.classList.contains('hidden') && e.key === 'Escape') {
+      closeModal();
+      return;
+    }
+
     if (elements.popup.classList.contains('hidden')) return;
 
     if (e.key === 'Escape') {
