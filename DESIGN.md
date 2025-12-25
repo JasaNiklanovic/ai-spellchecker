@@ -77,3 +77,56 @@ Estimate speaking time per slide based on note length and complexity. Flag slide
 
 ### 4. Personal Dictionary
 Allow users to add words to a personal dictionary so they won't be flagged as misspelled in the future. When a word is flagged, offer an "Add to dictionary" option alongside Accept and Dismiss. This is especially useful for names, technical terms, and company-specific jargon that the traditional spell checker doesn't recognize.
+
+## Evaluation Strategy
+
+### How to Test Effectiveness
+
+**1. Precision & Recall Testing**
+- Build a labeled test set of speaker notes with known errors (spelling, terminology, grammar)
+- Measure precision: % of flagged issues that are actual errors (avoid false positives)
+- Measure recall: % of actual errors that were caught (avoid false negatives)
+- Compare traditional-only vs. AI-only vs. hybrid approach
+
+**2. Terminology Accuracy**
+- Test with real slide decks containing domain-specific abbreviations (GTM, K8s, ARR, MRR)
+- Measure how often AI correctly maps abbreviations to their full forms from context
+- Track false corrections: cases where AI "fixes" intentional informal language
+
+**3. A/B Testing in Production**
+- Split users between traditional-only and hybrid modes
+- Compare completion rates, time-to-done, and user satisfaction
+- Watch for users disabling AI (signal of poor suggestions)
+
+**4. User Acceptance Rate**
+- Track accept vs. dismiss ratio per suggestion type (spelling/terminology/grammar)
+- Low acceptance rate for a category = poor quality suggestions
+- Monitor "Correct All" usage vs. manual review (trust signal)
+
+### Key Metrics
+
+| Metric | What It Measures | Target |
+|--------|------------------|--------|
+| **Precision** | Are flagged issues real problems? | >90% |
+| **Recall** | Are we catching most errors? | >85% |
+| **Accept Rate** | Do users trust our suggestions? | >70% |
+| **Time to Complete** | Is the tool faster than manual review? | <50% of manual time |
+| **AI Value-Add** | Issues caught by AI that traditional missed | >20% of total |
+| **False Positive Rate** | Annoying incorrect flags | <5% |
+| **Latency (Traditional)** | Speed of initial feedback | <300ms |
+| **Latency (AI)** | Time for contextual analysis | <3s |
+| **Cost per Check** | API cost sustainability | <$0.001 |
+
+### Qualitative Evaluation
+
+- **User interviews**: Do suggestions feel helpful or annoying?
+- **Edge cases**: How does it handle mixed languages, code snippets, URLs?
+- **Context understanding**: Does it correctly identify when "gtm" means "go-to-market" vs. Google Tag Manager?
+
+### Continuous Monitoring
+
+In production, log (with user consent):
+- Suggestions shown vs. accepted/dismissed
+- Words added to personal dictionary (common = should be in default dictionary)
+- AI suggestions that override traditional (quality of merge logic)
+- Session duration and completion rates
