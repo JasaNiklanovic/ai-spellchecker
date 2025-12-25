@@ -10,36 +10,30 @@
   <div class="container">
     <header>
       <h1>Speaker Notes Spell Checker</h1>
-      <p class="subtitle">Context-aware spell checking for presentations</p>
+      <p class="subtitle">AI powered context-aware spell checking for presentations</p>
     </header>
 
     <main>
-      <!-- Slide Content - Full Width -->
-      <section class="slide-section">
-        <label for="slideContent">Slide Content</label>
-        <textarea
-          id="slideContent"
-          placeholder="Paste your slide content here for context-aware terminology checking..."
-          rows="3"
-        ></textarea>
-      </section>
-
-      <!-- Main Editor Area - 80/20 Split -->
+      <!-- Editor Area - Side by Side -->
       <div class="editor-area">
-        <!-- Speaker Notes - 80% -->
+        <!-- Speaker Notes - Main -->
         <section class="notes-section">
-          <label for="speakerNotes">Speaker Notes</label>
           <div class="editor-container">
             <div id="editorContent" class="editor-content" contenteditable="true" data-placeholder="Type or paste your speaker notes here..."></div>
+            <div id="editorStatus" class="editor-status hidden">
+              <span class="status-icon"></span>
+              <span id="statusText"></span>
+            </div>
           </div>
         </section>
 
-        <!-- Control Panel - 20% -->
+        <!-- Control Panel - Sidebar -->
         <aside class="control-panel">
           <div class="panel-content">
             <h2>Spell Check</h2>
             <p class="panel-description">Check your speaker notes for spelling, grammar, and terminology issues.</p>
 
+            <!-- AI Toggle -->
             <div class="ai-toggle-section">
               <div class="toggle-row">
                 <span class="toggle-label">Include AI</span>
@@ -69,12 +63,44 @@
             </div>
           </div>
 
-          <div class="panel-footer">
-            <span class="ai-status">AI: <span id="aiStatus">Checking...</span></span>
-          </div>
         </aside>
       </div>
     </main>
+
+    <footer class="app-footer">
+      <div class="getting-started">
+        <span class="getting-started-label">Get started:</span>
+        <button id="slideContextBtn" class="step-link">
+          <span class="step-num">1</span> Add slide context
+        </button>
+        <span class="step-separator">→</span>
+        <span class="step-item"><span class="step-num">2</span> Paste speaker notes</span>
+        <span class="step-separator">→</span>
+        <span class="step-item"><span class="step-num">3</span> Check spelling</span>
+      </div>
+      <div class="footer-meta">
+        <span class="ai-status">AI: <span id="aiStatus">Checking...</span></span>
+        <span class="footer-credit">Built with ♥ by Jasa Niklanovic</span>
+      </div>
+    </footer>
+
+    <!-- Slide Context Modal -->
+    <div id="contextModal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Slide Context</h2>
+          <button class="modal-close" id="modalClose">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="modal-description">Paste your slide content here so AI can match your brand terminology and suggest contextual corrections.</p>
+          <textarea id="slideContent" placeholder="Paste slide content here for context-aware terminology checking..."></textarea>
+        </div>
+        <div class="modal-footer">
+          <button id="modalSave" class="modal-save-btn">Save Context</button>
+        </div>
+      </div>
+    </div>
 
     <!-- Floating Suggestion Popup -->
     <div id="suggestionPopup" class="suggestion-popup hidden">
