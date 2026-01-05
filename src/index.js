@@ -90,7 +90,7 @@ app.listen(PORT, () => {
 ║     AI-Powered Speaker Notes Spell Checker                ║
 ╠═══════════════════════════════════════════════════════════╣
 ║  Server running at: http://localhost:${PORT}                 ║
-║  AI Status: ${process.env.OPENAI_API_KEY ? 'Configured ✓' : 'Not configured (set OPENAI_API_KEY)'}
+║  AI Status: ${process.env.OPENAI_API_KEY ? 'Configured ✓' : 'Not configured (set OPENAI_API_KEY)'}      ║
 ╚═══════════════════════════════════════════════════════════╝
   `);
 });

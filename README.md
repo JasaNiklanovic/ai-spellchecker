@@ -44,3 +44,39 @@ npm test      # Run tests
 OPENAI_API_KEY=your_key_here
 PORT=3000
 ```
+
+## Demo Examples
+
+### Slide Context (paste into "Add slide context" modal)
+
+```
+Q4 Product Launch: Acme Analytics Platform
+
+Key Features:
+- Go-to-market strategy
+- Kubernetes-native deployment
+- Annual Recurring Revenue (ARR) tracking
+- Net Promoter Score integration
+
+Company: Acme Corporation
+```
+
+### Speaker Notes (paste into editor)
+
+```
+Welcome to the Q4 product luanch presentation.
+
+Today Im going to walk you through our new Acme Anlytics platfrom and our GTM strategy.
+
+The system is K8s-native, deploying seamlessly into your infastructure. For our rev teams, you can track ARR in real-time with complete visability. Our NPS intergration shows customer satisfation at a glance.
+
+We dont just provide data - we provide actionable insigths. I reccomend scheduling a demo with your team.
+```
+
+### What Gets Flagged
+
+| Type | Examples | Color |
+|------|----------|-------|
+| Spelling | luanch, platfrom, Anlytics, infastructure, visability, intergration, satisfation, insigths, reccomend | Red |
+| Terminology | GTM→Go-to-market, K8s→Kubernetes, rev teams→revenue teams, NPS→Net Promoter Score | Purple |
+| Grammar | Im→I'm, dont→don't | Yellow |
