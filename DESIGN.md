@@ -42,7 +42,7 @@ A key problem: traditional dictionaries suggest unhelpful corrections for domain
 
 ### Framework Choices
 - **Current**: Plain JavaScript with direct OpenAI API calls—no frameworks. For a focused prototype, frameworks would be overkill and add unnecessary complexity.
-- **Production**: A full agentic system using LangChain and LangGraph for orchestration, with LangSmith for observability, tracing, and quality evaluation. This stack provides the tooling needed for reliable AI systems at scale—prompt versioning, A/B testing, failure recovery, and continuous monitoring.
+- **Production**: A full agentic system using LangChain and LangGraph for orchestration, with LangSmith for observability, tracing, and quality evaluation. This stack provides the tooling needed for reliable AI systems at scale — Agent orchestration, prompt versioning, A/B testing, failure recovery, and continuous monitoring and optimisation.
 
 ## Production Extensions
 
@@ -119,7 +119,7 @@ Allow users to add words to a personal dictionary so they won't be flagged as mi
 
 ### Qualitative Evaluation
 
-- **User interviews**: Do suggestions feel helpful or annoying?
+- **User (automated) surveys and interviews**: Do suggestions feel helpful or annoying?
 - **Edge cases**: How does it handle mixed languages, code snippets, URLs?
 - **Context understanding**: Does it correctly identify when "gtm" means "go-to-market" vs. Google Tag Manager?
 

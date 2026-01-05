@@ -25,45 +25,37 @@ npm start             # Open http://localhost:3000
 
 ## Features
 
-- **Hybrid checking**: Fast dictionary check + AI contextual analysis
-- **Terminology awareness**: Matches informal terms to your slide content (e.g., "gtm" → "go-to-market")
-- **Grammarly-style UI**: Click highlighted words, accept/dismiss suggestions
-- **Smart merging**: AI suggestions override unhelpful dictionary suggestions
+- **Hybrid checking** - Fast dictionary check + streaming AI contextual analysis
+- **Terminology extraction** - Pre-extracts key terms from slide content for accurate matching
+- **Streaming results** - AI errors appear progressively as they're found
+- **Grammarly-style UI** - Click highlighted words, accept/dismiss suggestions, keyboard navigation
+- **Color-coded issues** - Red (spelling), purple (terminology), yellow (grammar)
 
 ## How It Works
 
-1. **Traditional check** runs first (instant, free) - catches obvious typos
-2. **AI check** adds context (if enabled) - catches terminology mismatches, grammar issues
-3. **Smart merge** - AI wins for terminology conflicts (e.g., "gtm" → "go-to-market" beats "gtm" → "gem")
+1. **Add slide context** → Terminology extracted in background (e.g., "Go-to-market", "Kubernetes")
+2. **Check spelling** → Traditional dictionary check runs instantly
+3. **AI streams results** → Errors appear as they're found, matching terms to your slides
 
 ## API
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/health` | GET | Server status |
-| `/api/check/quick` | POST | Traditional check only |
-| `/api/check/full` | POST | Full hybrid check |
+| `/api/check/quick` | POST | Traditional dictionary check |
 | `/api/check/stream` | POST | Streaming AI check (SSE) |
-| `/api/terminology/extract` | POST | Extract terms from slides |
+| `/api/terminology/extract` | POST | Extract terms from slide content |
 
 ## Development
 
 ```bash
 npm run dev   # Auto-reload on changes
-npm test      # Run tests
+npm test      # Run 24 tests
 ```
 
-## Environment
+## Demo Content
 
-```
-OPENAI_API_KEY=your_key_here
-PORT=3000
-```
-
-## Demo Examples
-
-### Slide Context (paste into "Add slide context" modal)
-
+### Slide Context
 ```
 Q4 Product Launch: Acme Analytics Platform
 
@@ -72,12 +64,9 @@ Key Features:
 - Kubernetes-native deployment
 - Annual Recurring Revenue (ARR) tracking
 - Net Promoter Score integration
-
-Company: Acme Corporation
 ```
 
-### Speaker Notes (paste into editor)
-
+### Speaker Notes
 ```
 Welcome to the Q4 product luanch presentation.
 
