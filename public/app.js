@@ -73,13 +73,6 @@ const api = {
       body: JSON.stringify({ text, terminology }),
     }).then(r => r.json()),
 
-  aiCheck: (speakerNotes, slideContent, terminology = []) =>
-    fetch('/api/check/full', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ speakerNotes, slideContent, terminology }),
-    }).then(r => r.json()),
-
   // Streaming AI check - returns async generator
   aiCheckStream: async function* (speakerNotes, slideContent, terminology = []) {
     const response = await fetch('/api/check/stream', {

@@ -34,8 +34,8 @@ const buildPrompt = ({ speakerNotes, slideContent, terminology = [] }) => {
   return `${slide}${terms}\n\nSPEAKER NOTES (check these):\n${speakerNotes}`;
 };
 
-// Parse AI response safely
-const parseAIResponse = (content) => {
+// Parse AI response safely (exported for testing)
+export const parseAIResponse = (content) => {
   try {
     const parsed = JSON.parse(content);
     const errors = parsed.errors || parsed || [];
