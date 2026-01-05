@@ -13,19 +13,24 @@ const getClient = () => {
 };
 
 // System prompt (static, can be cached by API)
-const SYSTEM_PROMPT = `You are a spell checker. Find issues in NOTES considering SLIDE context.
+const SYSTEM_PROMPT = `You are a thorough spell checker. Find ALL issues in the speaker notes.
 
-Check for:
-- SPELLING: typos (realy→really, platfrom→platform)
-- TERMINOLOGY: informal→formal from slide (gtm→go-to-market, rev teams→revenue teams)
-- GRAMMAR: missing apostrophes (dont→don't, Im→I'm)
+1. SPELLING - Every typo: realy→really, platfrom→platform, teh→the, recieve→receive
+2. TERMINOLOGY - Match informal terms to formal slide content:
+   - Acronyms: GTM→Go-to-market, K8s→Kubernetes, ARR→Annual Recurring Revenue
+   - Abbreviations: rev teams→revenue teams, ppl→people, mgmt→management
+   - Always suggest the EXACT term from the slide when available
+3. GRAMMAR - Missing apostrophes: dont→don't, Im→I'm, wont→won't, cant→can't
 
-Return JSON: {"errors":[{"word":"X","suggestion":"Y","reason":"brief reason","type":"spelling|terminology|grammar"}]}
-Return {"errors":[]} if perfect.`;
+Be thorough - check every word. Match terminology to slide content exactly.
+
+Return JSON: {"errors":[{"word":"exact word","suggestion":"correction","reason":"brief explanation","type":"spelling|terminology|grammar"}]}
+Empty if perfect: {"errors":[]}`;
 
 // Build user prompt (dynamic content only)
 const buildPrompt = ({ speakerNotes, slideContent }) => {
-  return `SLIDE: ${slideContent || 'None'}\n\nNOTES: ${speakerNotes}`;
+  const slide = slideContent ? `SLIDE CONTENT (match terminology to this):\n${slideContent}` : 'No slide context provided';
+  return `${slide}\n\nSPEAKER NOTES (check these):\n${speakerNotes}`;
 };
 
 // Parse AI response safely
