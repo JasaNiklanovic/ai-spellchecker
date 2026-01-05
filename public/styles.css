@@ -881,6 +881,7 @@ main {
 @media (max-width: 900px) {
   .container {
     padding: 16px;
+    padding-bottom: 160px; /* Space for fixed footer */
     min-height: auto;
   }
 
