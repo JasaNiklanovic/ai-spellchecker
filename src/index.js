@@ -4,7 +4,7 @@ import express from 'express';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { hybridSpellCheck, quickCheck } from './spellcheck/hybrid.js';
-import { extractTerminology } from './spellcheck/ai.js';
+import { extractTerminology, aiSpellCheckStream } from './spellcheck/ai.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -58,6 +58,35 @@ app.post('/api/check/full', async (req, res) => {
   } catch (error) {
     console.error('Full check error:', error);
     res.status(500).json({ error: 'Spell check failed' });
+  }
+});
+
+// Streaming AI spell check (Server-Sent Events)
+app.post('/api/check/stream', async (req, res) => {
+  const { speakerNotes, slideContent, terminology = [] } = req.body;
+
+  if (!speakerNotes) {
+    return res.status(400).json({ error: 'Speaker notes are required' });
+  }
+
+  // Set up SSE
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  try {
+    const stream = aiSpellCheckStream({ speakerNotes, slideContent, terminology });
+
+    for await (const event of stream) {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    }
+
+    res.write('data: [DONE]\n\n');
+    res.end();
+  } catch (error) {
+    console.error('Stream error:', error);
+    res.write(`data: ${JSON.stringify({ type: 'error', message: error.message })}\n\n`);
+    res.end();
   }
 });
 

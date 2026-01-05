@@ -79,6 +79,40 @@ const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ speakerNotes, slideContent, terminology }),
     }).then(r => r.json()),
+
+  // Streaming AI check - returns async generator
+  aiCheckStream: async function* (speakerNotes, slideContent, terminology = []) {
+    const response = await fetch('/api/check/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ speakerNotes, slideContent, terminology }),
+    });
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6);
+          if (data === '[DONE]') return;
+          try {
+            yield JSON.parse(data);
+          } catch {
+            // Skip invalid JSON
+          }
+        }
+      }
+    }
+  },
 };
 
 // ============================================
@@ -458,43 +492,48 @@ const handleCheck = async () => {
     applyHighlights(text, state.errors);
     updateResultsInfo();
 
-    // Step 2: AI check (if toggle is on)
+    // Step 2: AI check with streaming (if toggle is on)
     if (useAI) {
-      showStatus('Typos checked. AI matching your brand terminology ...');
-      elements.checkBtn.innerHTML = `<span class="spinner"></span> Checking with AI ...`;
+      showStatus('AI analyzing your notes...');
+      elements.checkBtn.innerHTML = `<span class="spinner"></span> AI checking...`;
       elements.checkBtn.disabled = true;
 
       const slideContent = state.slideContext;
-      const aiResult = await api.aiCheck(text, slideContent, state.extractedTerms);
+      const seenWords = new Set(state.errors.map(e => e.word.toLowerCase()));
+      let aiErrorCount = 0;
 
-      if (aiResult.errors && aiResult.errors.length > 0) {
-        const aiErrors = aiResult.errors.map(e => ({ ...e, source: 'ai' }));
+      // Stream AI results and show them as they arrive
+      for await (const event of api.aiCheckStream(text, slideContent, state.extractedTerms)) {
+        if (event.type === 'error' && event.error) {
+          const aiErr = event.error;
+          const wordLower = aiErr.word.toLowerCase();
 
-        const aiErrorsByWord = new Map();
-        aiErrors.forEach(e => aiErrorsByWord.set(e.word.toLowerCase(), e));
-
-        const filteredTraditional = state.errors.filter(tradErr => {
-          const aiErr = aiErrorsByWord.get(tradErr.word.toLowerCase());
-          if (!aiErr) return true;
-          if (aiErr.type === 'terminology' || aiErr.type === 'grammar') {
-            return false;
+          // Replace traditional error if AI found terminology/grammar issue
+          if (seenWords.has(wordLower)) {
+            if (aiErr.type === 'terminology' || aiErr.type === 'grammar') {
+              state.errors = state.errors.filter(e => e.word.toLowerCase() !== wordLower);
+              seenWords.delete(wordLower);
+            } else {
+              continue; // Skip duplicate spelling errors
+            }
           }
-          return true;
-        });
 
-        const remainingWords = new Set(filteredTraditional.map(e => e.word.toLowerCase()));
-        const newAiErrors = aiErrors.filter(e => !remainingWords.has(e.word.toLowerCase()));
+          // Add AI error and update UI immediately
+          state.errors.push(aiErr);
+          seenWords.add(wordLower);
+          aiErrorCount++;
 
-        const mergedErrors = [...filteredTraditional, ...newAiErrors];
-        mergedErrors.sort((a, b) => {
-          const posA = text.toLowerCase().indexOf(a.word.toLowerCase());
-          const posB = text.toLowerCase().indexOf(b.word.toLowerCase());
-          return posA - posB;
-        });
+          // Re-sort and update display
+          state.errors.sort((a, b) => {
+            const posA = text.toLowerCase().indexOf(a.word.toLowerCase());
+            const posB = text.toLowerCase().indexOf(b.word.toLowerCase());
+            return posA - posB;
+          });
 
-        state.errors = mergedErrors;
-        applyHighlights(text, state.errors);
-        updateResultsInfo();
+          applyHighlights(text, state.errors);
+          updateResultsInfo();
+          showStatus(`Found ${aiErrorCount} AI issue${aiErrorCount > 1 ? 's' : ''}...`);
+        }
       }
     }
   } catch (error) {

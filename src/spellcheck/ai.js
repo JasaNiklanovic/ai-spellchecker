@@ -15,12 +15,12 @@ const getClient = () => {
 // System prompt (static, can be cached by API)
 const SYSTEM_PROMPT = `You are a thorough spell checker. Find ALL issues in the speaker notes.
 
-1. SPELLING - Every typo: realy→really, platfrom→platform, teh→the, recieve→receive
+1. SPELLING - Every typo: realy→really, platfrom→platform, teh→the, recieve→receive ...
 2. TERMINOLOGY - Match informal terms to formal slide content:
-   - Acronyms: GTM→Go-to-market, K8s→Kubernetes, ARR→Annual Recurring Revenue
-   - Abbreviations: rev teams→revenue teams, ppl→people, mgmt→management
-   - Always suggest the EXACT term from the slide when available
-3. GRAMMAR - Missing apostrophes: dont→don't, Im→I'm, wont→won't, cant→can't
+   - Acronyms: GTM→Go-to-market, K8s→Kubernetes, ARR→Annual Recurring Revenue ...
+   - Abbreviations: rev teams→revenue teams, ppl→people, mgmt→management ...
+   - Always suggest the EXACT term from the slide when available ...
+3. GRAMMAR - Missing apostrophes: dont→don't, Im→I'm, wont→won't, cant→can't ...
 
 Be thorough - check every word. Match terminology to slide content exactly.
 
@@ -58,7 +58,7 @@ const parseAIResponse = (content) => {
   }
 };
 
-// Main AI spell check function
+// Main AI spell check function (non-streaming)
 export const aiSpellCheck = async ({ speakerNotes, slideContent = '', terminology = [] }) => {
   if (!process.env.OPENAI_API_KEY) {
     return Result.err('OPENAI_API_KEY not configured');
@@ -98,6 +98,100 @@ export const aiSpellCheck = async ({ speakerNotes, slideContent = '', terminolog
     });
   } catch (error) {
     return Result.err(`AI spell check failed: ${error.message}`);
+  }
+};
+
+// Streaming AI spell check - yields errors as they're found
+export const aiSpellCheckStream = async function* ({ speakerNotes, slideContent = '', terminology = [] }) {
+  if (!process.env.OPENAI_API_KEY) {
+    yield { type: 'error', message: 'OPENAI_API_KEY not configured' };
+    return;
+  }
+
+  if (speakerNotes.trim().length < 10) {
+    yield { type: 'done', errors: [] };
+    return;
+  }
+
+  try {
+    const openai = getClient();
+
+    const stream = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      max_tokens: 1024,
+      temperature: 0,
+      response_format: { type: 'json_object' },
+      stream: true,
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: buildPrompt({ speakerNotes, slideContent, terminology }) },
+      ],
+    });
+
+    let fullContent = '';
+    let lastParsedIndex = 0;
+    let errorIndex = 0;
+
+    for await (const chunk of stream) {
+      const delta = chunk.choices[0]?.delta?.content || '';
+      fullContent += delta;
+
+      // Try to extract complete error objects as they stream in
+      const errorsMatch = fullContent.match(/"errors"\s*:\s*\[/);
+      if (errorsMatch) {
+        const startIdx = errorsMatch.index + errorsMatch[0].length;
+        const content = fullContent.slice(startIdx);
+
+        // Find complete JSON objects in the array
+        let braceCount = 0;
+        let objStart = -1;
+
+        for (let i = lastParsedIndex - startIdx; i < content.length; i++) {
+          if (i < 0) continue;
+          const char = content[i];
+
+          if (char === '{') {
+            if (braceCount === 0) objStart = i;
+            braceCount++;
+          } else if (char === '}') {
+            braceCount--;
+            if (braceCount === 0 && objStart !== -1) {
+              const objStr = content.slice(objStart, i + 1);
+              try {
+                const errorObj = JSON.parse(objStr);
+                if (errorObj.word && errorObj.suggestion) {
+                  yield {
+                    type: 'error',
+                    error: {
+                      word: String(errorObj.word),
+                      suggestion: String(errorObj.suggestion),
+                      reason: String(errorObj.reason || 'Potential issue'),
+                      type: errorObj.type || 'spelling',
+                      source: 'ai',
+                      suggestions: [String(errorObj.suggestion)],
+                      id: `err-${errorIndex++}`,
+                    },
+                  };
+                }
+                lastParsedIndex = startIdx + i + 1;
+              } catch {
+                // Not valid JSON yet, continue
+              }
+              objStart = -1;
+            }
+          }
+        }
+      }
+    }
+
+    // Final parse of complete response
+    const parseResult = parseAIResponse(fullContent);
+    yield {
+      type: 'done',
+      errors: parseResult.ok ? parseResult.value : [],
+    };
+  } catch (error) {
+    yield { type: 'error', message: `AI spell check failed: ${error.message}` };
   }
 };
 
