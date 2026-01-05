@@ -9,7 +9,13 @@ The core insight is that traditional spell checkers and AI solve different probl
 - **Traditional dictionaries** catch obvious typos instantly ("tset" → "test")
 - **AI** understands context ("gtm" should match "go-to-market" from your slides)
 
-Rather than choosing one, this system runs both: traditional first for instant feedback, then AI adds contextual suggestions. When they disagree on the same word, AI wins for terminology (it has slide context) while traditional is trusted for pure spelling.
+Rather than choosing one, this system runs both: traditional first for instant feedback, then AI streams contextual suggestions as they're found. When they disagree on the same word, AI wins for terminology (it has slide context) while traditional is trusted for pure spelling.
+
+### Terminology Pre-extraction
+
+When users provide slide context, terminology is extracted immediately (before spell check). This serves two purposes:
+1. **Faster checks** - The spell check request is lighter, terms are already known
+2. **Better accuracy** - AI receives explicit "KEY TERMS TO MATCH" alongside slide content
 
 ### Grammarly-Style UX
 
@@ -22,8 +28,8 @@ A key problem: traditional dictionaries suggest unhelpful corrections for domain
 ## Trade-offs Considered
 
 ### Accuracy vs. Speed
-- **Choice**: Show traditional results immediately, add AI results after
-- **Why**: Users get instant feedback (200ms) while AI processes (2-3s). Waiting for AI before showing anything feels slow.
+- **Choice**: Show traditional results immediately, stream AI results as they're found
+- **Why**: Users get instant feedback (200ms) while AI streams results progressively. Each error appears as it's detected rather than waiting for the full response, making the 2-3s AI check feel much faster.
 
 ### Cost vs. Quality
 - **Choice**: GPT-4o-mini instead of GPT-4o or Claude Sonnet
@@ -114,7 +120,8 @@ Allow users to add words to a personal dictionary so they won't be flagged as mi
 | **AI Value-Add** | Issues caught by AI that traditional missed | >20% of total |
 | **False Positive Rate** | Annoying incorrect flags | <5% |
 | **Latency (Traditional)** | Speed of initial feedback | <300ms |
-| **Latency (AI)** | Time for contextual analysis | <3s |
+| **Latency (AI first result)** | Time to first streamed error | <1s |
+| **Latency (AI total)** | Complete contextual analysis | <3s |
 | **Cost per Check** | API cost sustainability | <$0.001 |
 
 ### Qualitative Evaluation
