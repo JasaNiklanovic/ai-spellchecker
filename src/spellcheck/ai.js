@@ -12,54 +12,37 @@ const getClient = () => {
   return client;
 };
 
-// Build prompt for contextual spell checking
+// System prompt (static, can be cached by API)
+const SYSTEM_PROMPT = `You are a spell checker. Find issues in NOTES considering SLIDE context.
+
+Check for:
+- SPELLING: typos (realy→really, platfrom→platform)
+- TERMINOLOGY: informal→formal from slide (gtm→go-to-market, rev teams→revenue teams)
+- GRAMMAR: missing apostrophes (dont→don't, Im→I'm)
+
+Return JSON: {"errors":[{"word":"X","suggestion":"Y","reason":"brief reason","type":"spelling|terminology|grammar"}]}
+Return {"errors":[]} if perfect.`;
+
+// Build user prompt (dynamic content only)
 const buildPrompt = ({ speakerNotes, slideContent }) => {
-  return `SLIDE: ${slideContent || 'None'}
-
-NOTES: ${speakerNotes}
-
-Find EVERY issue in NOTES. Be extremely thorough - check each word.
-
-1. SPELLING - ALL typos: realy, platfrom, alot, messagin, guidlines, diferently, togther, mesage, becaus, consistancy, actualy, disconected, experiance, etc.
-2. TERMINOLOGY - informal when slide is formal:
-   - "rev teams" → "revenue teams" (slide term)
-   - "gtm" → "go-to-market" (slide term)
-   - "ppl" → "people"
-3. GRAMMAR - missing apostrophes: doesnt→doesn't, dont→don't
-
-RULES:
-- Find ALL errors, not just some - be thorough
-- No duplicates
-- Full phrases for terminology ("rev teams" not "rev")
-- Helpful, contextual reasons:
-  - For terminology: "Your slide uses 'X' — match it for a consistent, on-brand presentation"
-  - For spelling: describe the specific error (e.g., "Transposed letters", "Missing letter")
-  - For grammar: explain the issue (e.g., "Missing apostrophe in contraction")
-
-JSON (complete list, no duplicates):
-[{"word":"X","suggestion":"Y","reason":"helpful reason","type":"spelling|terminology|grammar","confidence":"high"}]
-
-[] only if perfect. JSON only.`;
+  return `SLIDE: ${slideContent || 'None'}\n\nNOTES: ${speakerNotes}`;
 };
 
 // Parse AI response safely
 const parseAIResponse = (content) => {
   try {
-    const jsonMatch = content.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) return Result.ok([]);
-
-    const parsed = JSON.parse(jsonMatch[0]);
-    if (!Array.isArray(parsed)) return Result.ok([]);
+    const parsed = JSON.parse(content);
+    const errors = parsed.errors || parsed || [];
+    if (!Array.isArray(errors)) return Result.ok([]);
 
     return Result.ok(
-      parsed
+      errors
         .filter(item => item.word && item.suggestion)
         .map(item => ({
           word: String(item.word),
           suggestion: String(item.suggestion),
           reason: String(item.reason || 'Potential issue'),
           type: item.type || 'spelling',
-          confidence: item.confidence || 'medium',
           source: 'ai',
           suggestions: [String(item.suggestion)],
         }))
@@ -84,17 +67,16 @@ export const aiSpellCheck = async ({ speakerNotes, slideContent = '' }) => {
 
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
-      max_tokens: 2048,
+      max_tokens: 1024,
       temperature: 0,
+      response_format: { type: 'json_object' },
       messages: [
-        {
-          role: 'user',
-          content: buildPrompt({ speakerNotes, slideContent }),
-        },
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: buildPrompt({ speakerNotes, slideContent }) },
       ],
     });
 
-    const responseText = response.choices[0]?.message?.content || '[]';
+    const responseText = response.choices[0]?.message?.content || '{"errors":[]}';
     const parseResult = parseAIResponse(responseText);
 
     if (!parseResult.ok) {
