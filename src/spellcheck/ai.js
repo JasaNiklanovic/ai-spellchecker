@@ -28,9 +28,10 @@ Return JSON: {"errors":[{"word":"exact word","suggestion":"correction","reason":
 Empty if perfect: {"errors":[]}`;
 
 // Build user prompt (dynamic content only)
-const buildPrompt = ({ speakerNotes, slideContent }) => {
+const buildPrompt = ({ speakerNotes, slideContent, terminology = [] }) => {
   const slide = slideContent ? `SLIDE CONTENT (match terminology to this):\n${slideContent}` : 'No slide context provided';
-  return `${slide}\n\nSPEAKER NOTES (check these):\n${speakerNotes}`;
+  const terms = terminology.length ? `\n\nKEY TERMS TO MATCH: ${terminology.join(', ')}` : '';
+  return `${slide}${terms}\n\nSPEAKER NOTES (check these):\n${speakerNotes}`;
 };
 
 // Parse AI response safely
@@ -58,7 +59,7 @@ const parseAIResponse = (content) => {
 };
 
 // Main AI spell check function
-export const aiSpellCheck = async ({ speakerNotes, slideContent = '' }) => {
+export const aiSpellCheck = async ({ speakerNotes, slideContent = '', terminology = [] }) => {
   if (!process.env.OPENAI_API_KEY) {
     return Result.err('OPENAI_API_KEY not configured');
   }
@@ -77,7 +78,7 @@ export const aiSpellCheck = async ({ speakerNotes, slideContent = '' }) => {
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: buildPrompt({ speakerNotes, slideContent }) },
+        { role: 'user', content: buildPrompt({ speakerNotes, slideContent, terminology }) },
       ],
     });
 
@@ -115,31 +116,26 @@ export const extractTerminology = async (slideContent) => {
 
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
-      max_tokens: 512,
-      temperature: 0.1,
+      max_tokens: 256,
+      temperature: 0,
+      response_format: { type: 'json_object' },
       messages: [
         {
+          role: 'system',
+          content: 'Extract key terminology from slide content. Return JSON: {"terms":["term1","term2"]}',
+        },
+        {
           role: 'user',
-          content: `Extract terminology from this slide content that should be preserved during spell checking.
-
-Include: brand names, technical terms, acronyms, industry jargon, proper nouns.
-
-Content:
-${slideContent}
-
-Return a JSON array of terms: ["term1", "term2"]
-Return ONLY the JSON array.`,
+          content: `Extract brand names, technical terms, acronyms, formal phrases from:\n\n${slideContent}`,
         },
       ],
     });
 
-    const responseText = response.choices[0]?.message?.content || '[]';
+    const responseText = response.choices[0]?.message?.content || '{"terms":[]}';
 
     try {
-      const jsonMatch = responseText.match(/\[[\s\S]*\]/);
-      if (!jsonMatch) return Result.ok([]);
-
-      const terms = JSON.parse(jsonMatch[0]);
+      const parsed = JSON.parse(responseText);
+      const terms = parsed.terms || [];
       return Result.ok(Array.isArray(terms) ? terms.filter(t => typeof t === 'string') : []);
     } catch {
       return Result.ok([]);

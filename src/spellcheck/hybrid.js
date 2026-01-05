@@ -40,6 +40,7 @@ export const hybridSpellCheck = async ({
   const aiResult = await aiSpellCheck({
     speakerNotes,
     slideContent,
+    terminology,
   });
 
   if (aiResult.ok) {

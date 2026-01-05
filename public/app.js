@@ -11,6 +11,7 @@ const state = {
   aiConfigured: false,
   isChecking: false,
   slideContext: '',
+  extractedTerms: [], // Pre-extracted terminology from slide context
 };
 
 // ============================================
@@ -58,18 +59,25 @@ const api = {
       .then(r => r.json())
       .catch(() => ({ aiConfigured: false })),
 
-  traditionalCheck: (text) =>
+  extractTerminology: (slideContent) =>
+    fetch('/api/terminology/extract', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slideContent }),
+    }).then(r => r.json()),
+
+  traditionalCheck: (text, terminology = []) =>
     fetch('/api/check/quick', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, terminology: [] }),
+      body: JSON.stringify({ text, terminology }),
     }).then(r => r.json()),
 
-  aiCheck: (speakerNotes, slideContent) =>
+  aiCheck: (speakerNotes, slideContent, terminology = []) =>
     fetch('/api/check/full', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ speakerNotes, slideContent, terminology: [] }),
+      body: JSON.stringify({ speakerNotes, slideContent, terminology }),
     }).then(r => r.json()),
 };
 
@@ -141,16 +149,38 @@ const closeModal = () => {
   elements.contextModal.classList.add('hidden');
 };
 
-const saveContext = () => {
-  state.slideContext = elements.slideContent.value.trim();
-  updateContextButton();
+const saveContext = async () => {
+  const content = elements.slideContent.value.trim();
+  state.slideContext = content;
+  state.extractedTerms = [];
+
   closeModal();
+  updateContextButton();
+
+  // Extract terminology in background if AI is configured
+  if (content && state.aiConfigured) {
+    updateContextButton('Extracting...');
+    try {
+      const result = await api.extractTerminology(content);
+      if (result.terminology) {
+        state.extractedTerms = result.terminology;
+        console.log('Extracted terms:', state.extractedTerms);
+      }
+    } catch (err) {
+      console.error('Terminology extraction failed:', err);
+    }
+    updateContextButton();
+  }
 };
 
-const updateContextButton = () => {
-  if (state.slideContext) {
+const updateContextButton = (status) => {
+  if (status) {
+    elements.slideContextBtn.innerHTML = `<span class="step-num">1</span> ${status}`;
+    elements.slideContextBtn.classList.add('has-context');
+  } else if (state.slideContext) {
     const wordCount = state.slideContext.split(/\s+/).length;
-    elements.slideContextBtn.innerHTML = `<span class="step-num">1</span> ${wordCount} words loaded`;
+    const termInfo = state.extractedTerms.length ? ` (${state.extractedTerms.length} terms)` : '';
+    elements.slideContextBtn.innerHTML = `<span class="step-num">1</span> ${wordCount} words${termInfo}`;
     elements.slideContextBtn.classList.add('has-context');
   } else {
     elements.slideContextBtn.innerHTML = `<span class="step-num">1</span> Add slide context`;
@@ -410,7 +440,7 @@ const handleCheck = async () => {
     const useAI = elements.aiToggle.checked && state.aiConfigured;
 
     // Step 1: Traditional check (fast, no status needed)
-    const traditionalResult = await api.traditionalCheck(text);
+    const traditionalResult = await api.traditionalCheck(text, state.extractedTerms);
     const traditionalErrors = (traditionalResult.errors || []).map(err => ({
       ...err,
       reason: err.reason || 'Possible misspelling',
@@ -435,7 +465,7 @@ const handleCheck = async () => {
       elements.checkBtn.disabled = true;
 
       const slideContent = state.slideContext;
-      const aiResult = await api.aiCheck(text, slideContent);
+      const aiResult = await api.aiCheck(text, slideContent, state.extractedTerms);
 
       if (aiResult.errors && aiResult.errors.length > 0) {
         const aiErrors = aiResult.errors.map(e => ({ ...e, source: 'ai' }));
