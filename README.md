@@ -2,6 +2,19 @@
 
 Context-aware spell checking for presentation speaker notes. Combines traditional dictionary checking with AI-powered contextual analysis.
 
+## Demo
+
+See [demo.mov](./demo.mov) for a walkthrough of the full user experience.
+
+## Documentation
+
+See [DESIGN.md](./DESIGN.md) for the written component covering:
+- **Approach & Design Decisions** - Hybrid architecture, Grammarly-style UX, smart merging
+- **Trade-offs** - Accuracy vs speed, cost vs quality, direct context vs RAG
+- **Production Extensions** - Scalability, privacy, offline support
+- **Future AI Enhancements** - Tone consistency, audience adaptation, timing estimation
+- **Evaluation Strategy** - Testing methodology, key metrics, qualitative evaluation
+
 ## Quick Start
 
 ```bash
@@ -30,6 +43,8 @@ npm start             # Open http://localhost:3000
 | `/api/health` | GET | Server status |
 | `/api/check/quick` | POST | Traditional check only |
 | `/api/check/full` | POST | Full hybrid check |
+| `/api/check/stream` | POST | Streaming AI check (SSE) |
+| `/api/terminology/extract` | POST | Extract terms from slides |
 
 ## Development
 
