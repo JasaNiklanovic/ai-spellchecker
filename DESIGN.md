@@ -47,8 +47,8 @@ A key problem: traditional dictionaries suggest unhelpful corrections for domain
 - **Implementation**: Rules would be stored per organization and injected into the AI prompt alongside slide context. The RAG system would retrieve relevant rules based on presentation type, audience, or department.
 
 ### Framework Choices
-- **Current**: Plain JavaScript with direct OpenAI API calls—no frameworks. For a focused prototype, frameworks would be overkill and add unnecessary complexity.
-- **Production**: A full agentic system using LangChain and LangGraph for orchestration, with LangSmith for observability, tracing, and quality evaluation. This stack provides the tooling needed for reliable AI systems at scale — Agent orchestration, prompt versioning, A/B testing, failure recovery, and continuous monitoring and optimisation.
+- **Current**: Vanilla JavaScript with ES modules and a functional programming architecture—no heavy frameworks. The frontend is organized into focused modules (state management, API client, UI controllers, handlers) using FP patterns like `pipe()`, `partition()`, and `Result` types. This mirrors patterns familiar to Clojure developers: immutable state updates, pure transformations, and composition over inheritance.
+- **Production**: A full agentic system using LangChain and LangGraph for orchestration, with LangSmith for observability, tracing, and quality evaluation. This stack provides the tooling needed for reliable AI systems at scale—agent orchestration, prompt versioning, A/B testing, failure recovery, and continuous monitoring and optimisation.
 
 ## Production Extensions
 
