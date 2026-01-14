@@ -109,7 +109,7 @@ export const aiSpellCheckStream = async function* ({ speakerNotes, slideContent 
   }
 
   if (speakerNotes.trim().length < 10) {
-    yield { type: 'done', errors: [] };
+    yield { type: 'complete', issues: [] };
     return;
   }
 
@@ -161,8 +161,8 @@ export const aiSpellCheckStream = async function* ({ speakerNotes, slideContent 
                 const errorObj = JSON.parse(objStr);
                 if (errorObj.word && errorObj.suggestion) {
                   yield {
-                    type: 'error',
-                    error: {
+                    type: 'finding',
+                    issue: {
                       word: String(errorObj.word),
                       suggestion: String(errorObj.suggestion),
                       reason: String(errorObj.reason || 'Potential issue'),
@@ -187,8 +187,8 @@ export const aiSpellCheckStream = async function* ({ speakerNotes, slideContent 
     // Final parse of complete response
     const parseResult = parseAIResponse(fullContent);
     yield {
-      type: 'done',
-      errors: parseResult.ok ? parseResult.value : [],
+      type: 'complete',
+      issues: parseResult.ok ? parseResult.value : [],
     };
   } catch (error) {
     yield { type: 'error', message: `AI spell check failed: ${error.message}` };

@@ -92,15 +92,22 @@ export const traditionalCheck = (text, terminology = []) =>
  * Stream AI spell check results
  * Uses Server-Sent Events for progressive results
  *
+ * Event types:
+ * - { type: 'finding', issue: {...} } - Spelling/grammar issue found (success)
+ * - { type: 'complete', issues: [...] } - Stream finished successfully
+ * - { type: 'error', message: '...' } - Actual failure
+ *
  * @param {string} speakerNotes - Notes to check
  * @param {string} slideContent - Context for terminology
  * @param {string[]} terminology - Pre-extracted terms
- * @yields {{type: string, error?: Object}} Stream events
+ * @yields {{type: 'finding'|'complete'|'error', issue?: Object, issues?: Array, message?: string}}
  *
  * @example
  * for await (const event of aiCheckStream(notes, slides, terms)) {
- *   if (event.type === 'error') {
- *     processError(event.error);
+ *   if (event.type === 'finding') {
+ *     displayIssue(event.issue);
+ *   } else if (event.type === 'error') {
+ *     showError(event.message);
  *   }
  * }
  */

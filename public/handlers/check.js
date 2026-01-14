@@ -131,8 +131,8 @@ export const createCheckHandler = ({ getText, onUpdate, onStatusChange }) => {
 
         // Stream AI results
         for await (const event of api.aiCheckStream(text, state.slideContext, state.extractedTerms)) {
-          if (event.type === 'error' && event.error) {
-            const merged = mergeAiError(currentErrors, event.error, seenWords);
+          if (event.type === 'finding' && event.issue) {
+            const merged = mergeAiError(currentErrors, event.issue, seenWords);
             currentErrors = merged.errors;
             seenWords = merged.seenWords;
             aiErrorCount++;
