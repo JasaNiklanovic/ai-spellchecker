@@ -1,40 +1,62 @@
-// Speaker Notes Spell Checker - Compact UI with Modal
+/**
+ * Speaker Notes Spell Checker
+ *
+ * Main application entry point - orchestration only.
+ * All business logic is delegated to specialized modules.
+ *
+ * Architecture follows functional programming principles:
+ * - Immutable state (state.js)
+ * - Pure transformations (utils/fp.js, handlers/)
+ * - Explicit side effects (UI updates isolated here)
+ * - Composition over inheritance (factory functions)
+ */
 
 // ============================================
-// State
+// Module Imports
 // ============================================
 
-const state = {
-  errors: [],
-  currentErrorIndex: -1,
-  originalText: '',
-  aiConfigured: false,
-  isChecking: false,
-  slideContext: '',
-  extractedTerms: [], // Pre-extracted terminology from slide context
-};
+import { getState, updateState, hasErrors, getErrorCount } from './state.js';
+import { api } from './api.js';
+import { escapeHtml } from './utils/string.js';
+
+// Handlers
+import { handleAccept, handleDismiss, handleCorrectAll } from './handlers/corrections.js';
+import { createCheckHandler, getStatusMessage } from './handlers/check.js';
+import { createContextController } from './handlers/context.js';
+
+// UI Controllers
+import { createPopupController } from './ui/popup.js';
+import { createHighlightController } from './ui/highlights.js';
+import { setupModal } from './ui/modal.js';
 
 // ============================================
 // DOM Elements
 // ============================================
 
 const elements = {
-  slideContent: document.getElementById('slideContent'),
+  // Editor
   editorContent: document.getElementById('editorContent'),
   checkBtn: document.getElementById('checkBtn'),
   aiToggle: document.getElementById('aiToggle'),
+
+  // Results
   resultsInfo: document.getElementById('resultsInfo'),
   issueCount: document.getElementById('issueCount'),
   correctAllBtn: document.getElementById('correctAllBtn'),
+
+  // Status
   aiStatus: document.getElementById('aiStatus'),
   editorStatus: document.getElementById('editorStatus'),
   statusText: document.getElementById('statusText'),
-  // Context button & modal
+
+  // Context modal
+  slideContent: document.getElementById('slideContent'),
   slideContextBtn: document.getElementById('slideContextBtn'),
   contextModal: document.getElementById('contextModal'),
   modalClose: document.getElementById('modalClose'),
   modalSave: document.getElementById('modalSave'),
-  // Popup elements
+
+  // Popup
   popup: document.getElementById('suggestionPopup'),
   popupClose: document.getElementById('popupClose'),
   popupContext: document.getElementById('popupContext'),
@@ -50,554 +72,244 @@ const elements = {
 };
 
 // ============================================
-// API
+// UI Controllers (Factory Pattern)
 // ============================================
 
-const api = {
-  checkHealth: () =>
-    fetch('/api/health')
-      .then(r => r.json())
-      .catch(() => ({ aiConfigured: false })),
+// Highlight controller for editor
+const highlightController = createHighlightController(
+  elements.editorContent,
+  (index, element) => popupController.show(index, element, () => highlightController.getText())
+);
 
-  extractTerminology: (slideContent) =>
-    fetch('/api/terminology/extract', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ slideContent }),
-    }).then(r => r.json()),
+// Popup controller
+const popupController = createPopupController({
+  popup: elements.popup,
+  popupContext: elements.popupContext,
+  wrongWord: elements.wrongWord,
+  correctWord: elements.correctWord,
+  popupReason: elements.popupReason,
+  currentIndex: elements.currentIndex,
+  totalCount: elements.totalCount,
+  navPrev: elements.navPrev,
+  navNext: elements.navNext,
+});
 
-  traditionalCheck: (text, terminology = []) =>
-    fetch('/api/check/quick', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, terminology }),
-    }).then(r => r.json()),
-
-  // Streaming AI check - returns async generator
-  aiCheckStream: async function* (speakerNotes, slideContent, terminology = []) {
-    const response = await fetch('/api/check/stream', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ speakerNotes, slideContent, terminology }),
-    });
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6);
-          if (data === '[DONE]') return;
-          try {
-            yield JSON.parse(data);
-          } catch {
-            // Skip invalid JSON
-          }
-        }
-      }
-    }
-  },
-};
+// Context controller
+const contextController = createContextController({
+  slideContent: elements.slideContent,
+  slideContextBtn: elements.slideContextBtn,
+});
 
 // ============================================
-// Editor Functions
+// UI Update Functions
 // ============================================
-
-const getEditorText = () => {
-  // innerText can produce extra newlines from div/br structure
-  // Normalize: collapse 3+ newlines to 2 (preserve paragraph breaks)
-  const text = elements.editorContent.innerText || '';
-  return text.replace(/\n{3,}/g, '\n\n').trim();
-};
-
-const setEditorContent = (html) => {
-  elements.editorContent.innerHTML = html;
-};
-
-const escapeHtml = (text) =>
-  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-const escapeRegex = (str) =>
-  str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-// Apply highlights to the editor content
-const applyHighlights = (text, errors) => {
-  if (!errors.length) {
-    setEditorContent(escapeHtml(text));
-    return;
-  }
-
-  // Sort errors by word length (longest first to handle overlapping)
-  // Keep track of original indices for correct popup mapping
-  const sortedErrors = errors
-    .map((error, originalIndex) => ({ error, originalIndex }))
-    .sort((a, b) => b.error.word.length - a.error.word.length);
-
-  let html = escapeHtml(text);
-
-  sortedErrors.forEach(({ error, originalIndex }) => {
-    const escapedWord = escapeHtml(error.word);
-    const regex = new RegExp(`\\b(${escapeRegex(escapedWord)})\\b`, 'gi');
-
-    html = html.replace(regex, (match) => {
-      const typeClass = error.type === 'terminology' ? 'terminology' :
-                        error.type === 'grammar' ? 'grammar' : '';
-      return `<span class="error-highlight ${typeClass}" data-error-index="${originalIndex}">${match}</span>`;
-    });
-  });
-
-  setEditorContent(html);
-
-  // Reattach click handlers to highlights
-  document.querySelectorAll('.error-highlight').forEach(el => {
-    el.addEventListener('click', handleHighlightClick);
-  });
-};
-
-// ============================================
-// Modal Functions
-// ============================================
-
-const openModal = () => {
-  elements.contextModal.classList.remove('hidden');
-  elements.slideContent.focus();
-};
-
-const closeModal = () => {
-  elements.contextModal.classList.add('hidden');
-};
-
-const saveContext = async () => {
-  const content = elements.slideContent.value.trim();
-  state.slideContext = content;
-  state.extractedTerms = [];
-
-  closeModal();
-  updateContextButton();
-
-  // Extract terminology in background if AI is configured
-  if (content && state.aiConfigured) {
-    updateContextButton('Extracting...');
-    try {
-      const result = await api.extractTerminology(content);
-      if (result.terminology) {
-        state.extractedTerms = result.terminology;
-        console.log('Extracted terms:', state.extractedTerms);
-      }
-    } catch (err) {
-      console.error('Terminology extraction failed:', err);
-    }
-    updateContextButton();
-  }
-};
-
-const updateContextButton = (status) => {
-  if (status) {
-    elements.slideContextBtn.innerHTML = `<span class="step-num">1</span> ${status}`;
-    elements.slideContextBtn.classList.add('has-context');
-  } else if (state.slideContext) {
-    const wordCount = state.slideContext.split(/\s+/).length;
-    const termInfo = state.extractedTerms.length ? ` (${state.extractedTerms.length} terms)` : '';
-    elements.slideContextBtn.innerHTML = `<span class="step-num">1</span> ${wordCount} words${termInfo}`;
-    elements.slideContextBtn.classList.add('has-context');
-  } else {
-    elements.slideContextBtn.innerHTML = `<span class="step-num">1</span> Add slide context`;
-    elements.slideContextBtn.classList.remove('has-context');
-  }
-};
-
-// ============================================
-// Popup Functions
-// ============================================
-
-const showPopup = (errorIndex, anchorElement) => {
-  const error = state.errors[errorIndex];
-  if (!error) return;
-
-  state.currentErrorIndex = errorIndex;
-
-  // Update popup content
-  const text = getEditorText();
-  const wordIndex = text.toLowerCase().indexOf(error.word.toLowerCase());
-  const contextStart = Math.max(0, wordIndex - 30);
-  const contextEnd = Math.min(text.length, wordIndex + error.word.length + 30);
-  const context = '...' + text.slice(contextStart, contextEnd) + '...';
-
-  elements.popupContext.textContent = context;
-  elements.wrongWord.textContent = error.word;
-  elements.correctWord.textContent = error.suggestions?.[0] || error.suggestion || '?';
-  elements.popupReason.textContent = error.reason || 'Potential issue';
-
-  // Update navigation
-  elements.currentIndex.textContent = errorIndex + 1;
-  elements.totalCount.textContent = state.errors.length;
-  elements.navPrev.disabled = errorIndex === 0;
-  elements.navNext.disabled = errorIndex === state.errors.length - 1;
-
-  // Position popup near the clicked element, never covering it
-  let rect = anchorElement.getBoundingClientRect();
-
-  // Show popup off-screen first to measure its actual size
-  elements.popup.style.visibility = 'hidden';
-  elements.popup.classList.remove('hidden');
-  const popupRect = elements.popup.getBoundingClientRect();
-  const popupHeight = popupRect.height;
-  const popupWidth = popupRect.width;
-
-  const gap = 12;
-  const margin = 16;
-
-  // Check if we need to scroll
-  const isHighlightVisible = rect.top >= margin && rect.bottom <= window.innerHeight - margin;
-
-  if (!isHighlightVisible) {
-    const editorContent = document.getElementById('editorContent');
-    const targetScrollTop = anchorElement.offsetTop - editorContent.offsetTop - 100;
-    editorContent.scrollTop = Math.max(0, targetScrollTop);
-    rect = anchorElement.getBoundingClientRect();
-  }
-
-  // Calculate available space above and below
-  const spaceBelow = window.innerHeight - rect.bottom - gap - margin;
-  const spaceAbove = rect.top - gap - margin;
-
-  let top, left;
-
-  // Prefer below, but go above if not enough space
-  if (spaceBelow >= popupHeight || spaceBelow >= spaceAbove) {
-    top = rect.bottom + gap;
-    if (top + popupHeight > window.innerHeight - margin) {
-      top = window.innerHeight - popupHeight - margin;
-    }
-  } else {
-    top = rect.top - popupHeight - gap;
-    if (top < margin) {
-      top = margin;
-    }
-  }
-
-  // Horizontal positioning
-  left = rect.left + (rect.width / 2) - (popupWidth / 2);
-
-  if (left < margin) {
-    left = margin;
-  } else if (left + popupWidth > window.innerWidth - margin) {
-    left = window.innerWidth - popupWidth - margin;
-  }
-
-  elements.popup.style.top = `${top}px`;
-  elements.popup.style.left = `${left}px`;
-  elements.popup.style.visibility = 'visible';
-};
-
-const hidePopup = () => {
-  elements.popup.classList.add('hidden');
-  state.currentErrorIndex = -1;
-};
-
-const navigateError = (direction) => {
-  const newIndex = state.currentErrorIndex + direction;
-  if (newIndex >= 0 && newIndex < state.errors.length) {
-    const targetHighlight = document.querySelector(`.error-highlight[data-error-index="${newIndex}"]`);
-    if (targetHighlight) {
-      showPopup(newIndex, targetHighlight);
-    }
-  }
-};
-
-// ============================================
-// Action Handlers
-// ============================================
-
-const handleHighlightClick = (e) => {
-  const index = parseInt(e.target.dataset.errorIndex, 10);
-  showPopup(index, e.target);
-};
-
-const handleAccept = () => {
-  const error = state.errors[state.currentErrorIndex];
-  if (!error) return;
-
-  const text = getEditorText();
-  const suggestion = error.suggestions?.[0] || error.suggestion;
-  if (!suggestion) return;
-
-  // Replace the word in text
-  const regex = new RegExp(`\\b${escapeRegex(error.word)}\\b`, 'gi');
-  const newText = text.replace(regex, suggestion);
-
-  // Remove this error from the list
-  state.errors.splice(state.currentErrorIndex, 1);
-
-  // Re-apply highlights
-  applyHighlights(newText, state.errors);
-  updateResultsInfo();
-
-  // Navigate to next error or close popup
-  if (state.errors.length > 0) {
-    const nextIndex = Math.min(state.currentErrorIndex, state.errors.length - 1);
-    const targetHighlight = document.querySelector(`.error-highlight[data-error-index="${nextIndex}"]`);
-    if (targetHighlight) {
-      showPopup(nextIndex, targetHighlight);
-    } else {
-      hidePopup();
-    }
-  } else {
-    hidePopup();
-  }
-};
-
-const handleDismiss = () => {
-  state.errors.splice(state.currentErrorIndex, 1);
-
-  const text = getEditorText();
-  applyHighlights(text, state.errors);
-  updateResultsInfo();
-
-  if (state.errors.length > 0) {
-    const nextIndex = Math.min(state.currentErrorIndex, state.errors.length - 1);
-    const targetHighlight = document.querySelector(`.error-highlight[data-error-index="${nextIndex}"]`);
-    if (targetHighlight) {
-      showPopup(nextIndex, targetHighlight);
-    } else {
-      hidePopup();
-    }
-  } else {
-    hidePopup();
-  }
-};
-
-const handleCorrectAll = () => {
-  if (state.errors.length === 0) return;
-
-  hidePopup();
-  let text = getEditorText();
-
-  // Find positions and sort by position descending (end to start)
-  const errorsWithPositions = state.errors
-    .map(error => {
-      const suggestion = error.suggestions?.[0] || error.suggestion;
-      if (!suggestion) return null;
-
-      const regex = new RegExp(`\\b${escapeRegex(error.word)}\\b`, 'gi');
-      const match = regex.exec(text);
-      if (!match) return null;
-
-      return {
-        error,
-        suggestion,
-        position: match.index,
-        word: match[0],
-      };
-    })
-    .filter(Boolean)
-    .sort((a, b) => b.position - a.position);
-
-  // Apply all corrections from end to start
-  errorsWithPositions.forEach(({ position, word, suggestion }) => {
-    text = text.slice(0, position) + suggestion + text.slice(position + word.length);
-  });
-
-  // Clear all errors and update UI
-  state.errors = [];
-  setEditorContent(escapeHtml(text));
-  updateResultsInfo();
-};
 
 const updateResultsInfo = () => {
-  if (state.errors.length > 0) {
+  if (hasErrors()) {
     elements.resultsInfo.classList.remove('hidden');
-    elements.issueCount.textContent = state.errors.length;
+    elements.issueCount.textContent = getErrorCount();
   } else {
     elements.resultsInfo.classList.add('hidden');
   }
 };
 
-// ============================================
-// Check Functions
-// ============================================
-
-const setLoading = (loading, text = 'Check Spelling') => {
-  state.isChecking = loading;
+const setLoading = (loading) => {
+  const state = getState();
   elements.checkBtn.disabled = loading;
 
   if (loading) {
-    elements.checkBtn.innerHTML = `<span class="spinner"></span> Checking...`;
+    elements.checkBtn.innerHTML = '<span class="spinner"></span> Checking...';
     elements.checkBtn.classList.add('loading');
   } else {
-    elements.checkBtn.innerHTML = text;
+    elements.checkBtn.innerHTML = 'Check Spelling';
     elements.checkBtn.classList.remove('loading');
   }
 };
 
 const showStatus = (message, isDone = false) => {
+  if (!message) {
+    elements.editorStatus.classList.add('hidden');
+    return;
+  }
+
   elements.statusText.textContent = message;
   elements.editorStatus.classList.remove('hidden', 'done');
+
   if (isDone) {
     elements.editorStatus.classList.add('done');
-    setTimeout(() => {
-      elements.editorStatus.classList.add('hidden');
-    }, 2000);
+    setTimeout(() => elements.editorStatus.classList.add('hidden'), 2000);
   }
 };
 
-const hideStatus = () => {
-  elements.editorStatus.classList.add('hidden');
-};
+// ============================================
+// Check Handler (Composed)
+// ============================================
 
-const handleCheck = async () => {
-  const text = getEditorText();
-  if (!text.trim()) return;
+const handleCheck = createCheckHandler({
+  getText: () => highlightController.getText(),
 
-  hidePopup();
-  setLoading(true);
-  state.errors = [];
-  state.originalText = text;
-
-  try {
-    const useAI = elements.aiToggle.checked && state.aiConfigured;
-
-    // Step 1: Traditional check (fast, no status needed)
-    const traditionalResult = await api.traditionalCheck(text, state.extractedTerms);
-    const traditionalErrors = (traditionalResult.errors || []).map(err => ({
-      ...err,
-      reason: err.reason || 'Possible misspelling',
-      source: 'traditional',
-    }));
-
-    // Sort by position in text
-    traditionalErrors.sort((a, b) => {
-      const posA = text.toLowerCase().indexOf(a.word.toLowerCase());
-      const posB = text.toLowerCase().indexOf(b.word.toLowerCase());
-      return posA - posB;
-    });
-
-    state.errors = traditionalErrors;
-    applyHighlights(text, state.errors);
+  onUpdate: ({ errors, text }) => {
+    highlightController.apply(text, errors);
     updateResultsInfo();
+  },
 
-    // Step 2: AI check with streaming (if toggle is on)
-    if (useAI) {
-      showStatus('AI analyzing your notes...');
-      elements.checkBtn.innerHTML = `<span class="spinner"></span> AI checking...`;
-      elements.checkBtn.disabled = true;
+  onStatusChange: (status) => {
+    const message = getStatusMessage(status);
 
-      const slideContent = state.slideContext;
-      const seenWords = new Set(state.errors.map(e => e.word.toLowerCase()));
-      let aiErrorCount = 0;
+    switch (status.phase) {
+      case 'start':
+        setLoading(true);
+        popupController.hide();
+        break;
 
-      // Stream AI results and show them as they arrive
-      for await (const event of api.aiCheckStream(text, slideContent, state.extractedTerms)) {
-        if (event.type === 'error' && event.error) {
-          const aiErr = event.error;
-          const wordLower = aiErr.word.toLowerCase();
+      case 'ai-start':
+        elements.checkBtn.innerHTML = '<span class="spinner"></span> AI checking...';
+        showStatus(message);
+        break;
 
-          // Replace traditional error if AI found terminology/grammar issue
-          if (seenWords.has(wordLower)) {
-            if (aiErr.type === 'terminology' || aiErr.type === 'grammar') {
-              state.errors = state.errors.filter(e => e.word.toLowerCase() !== wordLower);
-              seenWords.delete(wordLower);
-            } else {
-              continue; // Skip duplicate spelling errors
-            }
-          }
+      case 'ai-progress':
+        showStatus(message);
+        break;
 
-          // Add AI error and update UI immediately
-          state.errors.push(aiErr);
-          seenWords.add(wordLower);
-          aiErrorCount++;
+      case 'done':
+        setLoading(false);
+        if (message) showStatus(message, true);
+        break;
 
-          // Re-sort and update display
-          state.errors.sort((a, b) => {
-            const posA = text.toLowerCase().indexOf(a.word.toLowerCase());
-            const posB = text.toLowerCase().indexOf(b.word.toLowerCase());
-            return posA - posB;
-          });
+      case 'error':
+        setLoading(false);
+        showStatus(null);
+        break;
+    }
+  },
+});
 
-          applyHighlights(text, state.errors);
-          updateResultsInfo();
-          showStatus(`Found ${aiErrorCount} AI issue${aiErrorCount > 1 ? 's' : ''}...`);
+// ============================================
+// Correction Handlers (Wired to UI)
+// ============================================
+
+const onAccept = () => {
+  handleAccept(
+    () => highlightController.getText(),
+    (result) => {
+      highlightController.apply(result.text, result.errors);
+      updateResultsInfo();
+
+      if (result.errors.length > 0 && result.nextIndex >= 0) {
+        const highlight = document.querySelector(
+          `.error-highlight[data-error-index="${result.nextIndex}"]`
+        );
+        if (highlight) {
+          popupController.show(result.nextIndex, highlight, () => highlightController.getText());
+        } else {
+          popupController.hide();
         }
+      } else {
+        popupController.hide();
       }
     }
-  } catch (error) {
-    console.error('Check failed:', error);
-    hideStatus();
-  } finally {
-    setLoading(false);
-    if (elements.aiToggle.checked && state.aiConfigured) {
-      showStatus('Done! Click underlined words to review.', true);
+  );
+};
+
+const onDismiss = () => {
+  handleDismiss(
+    () => highlightController.getText(),
+    (result) => {
+      highlightController.apply(result.text, result.errors);
+      updateResultsInfo();
+
+      if (result.errors.length > 0 && result.nextIndex >= 0) {
+        const highlight = document.querySelector(
+          `.error-highlight[data-error-index="${result.nextIndex}"]`
+        );
+        if (highlight) {
+          popupController.show(result.nextIndex, highlight, () => highlightController.getText());
+        } else {
+          popupController.hide();
+        }
+      } else {
+        popupController.hide();
+      }
     }
-  }
+  );
+};
+
+const onCorrectAll = () => {
+  popupController.hide();
+  handleCorrectAll(
+    () => highlightController.getText(),
+    (result) => {
+      highlightController.setHtml(escapeHtml(result.text));
+      updateResultsInfo();
+    }
+  );
 };
 
 // ============================================
-// Initialize
+// Event Listeners Setup
 // ============================================
 
-const init = async () => {
-  // Check API health
-  const health = await api.checkHealth();
-  state.aiConfigured = health.aiConfigured;
+const setupEventListeners = () => {
+  // Check button
+  elements.checkBtn.addEventListener('click', () => {
+    const useAI = elements.aiToggle.checked && getState().aiConfigured;
+    handleCheck(useAI);
+  });
 
-  elements.aiStatus.textContent = health.aiConfigured ? 'Connected' : 'Not configured';
-  elements.aiStatus.className = health.aiConfigured ? '' : 'disabled';
+  // Correction buttons
+  elements.correctAllBtn.addEventListener('click', onCorrectAll);
+  elements.btnAccept.addEventListener('click', onAccept);
+  elements.btnDismiss.addEventListener('click', onDismiss);
+  elements.popupClose.addEventListener('click', () => popupController.hide());
 
-  if (!health.aiConfigured) {
-    elements.aiToggle.disabled = true;
-    elements.aiToggle.parentElement.style.opacity = '0.5';
-  }
+  // Navigation
+  elements.navPrev.addEventListener('click', () =>
+    popupController.navigate(-1, () => highlightController.getText())
+  );
+  elements.navNext.addEventListener('click', () =>
+    popupController.navigate(1, () => highlightController.getText())
+  );
 
-  // Event listeners
-  elements.checkBtn.addEventListener('click', handleCheck);
-  elements.correctAllBtn.addEventListener('click', handleCorrectAll);
-  elements.popupClose.addEventListener('click', hidePopup);
-  elements.btnAccept.addEventListener('click', handleAccept);
-  elements.btnDismiss.addEventListener('click', handleDismiss);
-  elements.navPrev.addEventListener('click', () => navigateError(-1));
-  elements.navNext.addEventListener('click', () => navigateError(1));
+  // Context modal
+  const modal = setupModal({
+    modal: elements.contextModal,
+    openBtn: elements.slideContextBtn,
+    closeBtn: elements.modalClose,
+    saveBtn: elements.modalSave,
+    backdrop: elements.contextModal.querySelector('.modal-backdrop'),
+    focusElement: elements.slideContent,
+    onSave: () => contextController.save(),
+  });
 
-  // Modal listeners
-  elements.slideContextBtn.addEventListener('click', openModal);
-  elements.modalClose.addEventListener('click', closeModal);
-  elements.modalSave.addEventListener('click', saveContext);
-  elements.contextModal.querySelector('.modal-backdrop').addEventListener('click', closeModal);
-
-  // Close popup when clicking outside
+  // Close popup on outside click
   document.addEventListener('click', (e) => {
     if (!elements.popup.contains(e.target) &&
         !e.target.classList.contains('error-highlight')) {
-      hidePopup();
+      popupController.hide();
     }
   });
 
-  // Handle keyboard navigation
+  // Keyboard navigation
   document.addEventListener('keydown', (e) => {
     // Modal escape
-    if (!elements.contextModal.classList.contains('hidden') && e.key === 'Escape') {
-      closeModal();
-      return;
-    }
+    if (modal.handleEscape(e)) return;
 
-    if (elements.popup.classList.contains('hidden')) return;
+    // Popup shortcuts
+    if (!popupController.isVisible()) return;
 
-    if (e.key === 'Escape') {
-      hidePopup();
-    } else if (e.key === 'ArrowLeft') {
-      navigateError(-1);
-    } else if (e.key === 'ArrowRight') {
-      navigateError(1);
-    } else if (e.key === 'Enter') {
-      handleAccept();
+    switch (e.key) {
+      case 'Escape':
+        popupController.hide();
+        break;
+      case 'ArrowLeft':
+        popupController.navigate(-1, () => highlightController.getText());
+        break;
+      case 'ArrowRight':
+        popupController.navigate(1, () => highlightController.getText());
+        break;
+      case 'Enter':
+        onAccept();
+        break;
     }
   });
 
@@ -609,4 +321,29 @@ const init = async () => {
   });
 };
 
+// ============================================
+// Initialization
+// ============================================
+
+const init = async () => {
+  // Check API health
+  const health = await api.checkHealth();
+  updateState({ aiConfigured: health.aiConfigured });
+
+  // Update AI status display
+  elements.aiStatus.textContent = health.aiConfigured ? 'Connected' : 'Not configured';
+  elements.aiStatus.className = health.aiConfigured ? '' : 'disabled';
+
+  if (!health.aiConfigured) {
+    elements.aiToggle.disabled = true;
+    elements.aiToggle.parentElement.style.opacity = '0.5';
+  }
+
+  // Setup all event listeners
+  setupEventListeners();
+
+  console.log('App initialized with modular architecture');
+};
+
+// Start the application
 init();
