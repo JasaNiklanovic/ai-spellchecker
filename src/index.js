@@ -3,7 +3,7 @@ import 'dotenv/config';
 import express from 'express';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { hybridSpellCheck, quickCheck } from './spellcheck/hybrid.js';
+import { traditionalSpellCheck } from './spellcheck/traditional.js';
 import { extractTerminology, aiSpellCheckStream } from './spellcheck/ai.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -31,32 +31,10 @@ app.post('/api/check/quick', async (req, res) => {
       return res.status(400).json({ error: 'Text is required' });
     }
 
-    const result = await quickCheck(text, terminology);
+    const result = await traditionalSpellCheck(text, terminology);
     res.json(result);
   } catch (error) {
     console.error('Quick check error:', error);
-    res.status(500).json({ error: 'Spell check failed' });
-  }
-});
-
-// Full spell check (traditional + AI)
-app.post('/api/check/full', async (req, res) => {
-  try {
-    const { speakerNotes, slideContent, terminology = [] } = req.body;
-
-    if (!speakerNotes) {
-      return res.status(400).json({ error: 'Speaker notes are required' });
-    }
-
-    const result = await hybridSpellCheck({
-      speakerNotes,
-      slideContent,
-      terminology,
-    });
-
-    res.json(result);
-  } catch (error) {
-    console.error('Full check error:', error);
     res.status(500).json({ error: 'Spell check failed' });
   }
 });
